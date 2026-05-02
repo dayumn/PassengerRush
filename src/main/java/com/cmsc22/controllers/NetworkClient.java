@@ -20,8 +20,6 @@ public class NetworkClient {
     private PrintWriter out;
     private BufferedReader in;
 
-    // jeepney1 = THIS client's jeepney (moves locally, never overwritten from server)
-    // jeepney2 = the OPPONENT's jeepney (position set from server STATE)
     private final Jeepney jeepney1;
     private final Jeepney jeepney2;
 
@@ -74,11 +72,9 @@ public class NetworkClient {
         System.out.println("[Client] Listening for server messages.");
     }
 
-    // Called every frame from GameTimer — sends this client's jeepney position to server
-    // FORMAT: POSITION:<playerId>:<x>:<y>:<passengers>:<points>
-    public void sendPosition(double x, double y, int passengers, int points) {
+    public void sendPosition(double x, double y, int passengers, int points, String direction) {
         if (!connected || playerId == -1) return;
-        send("POSITION:" + playerId + ":" + x + ":" + y + ":" + passengers + ":" + points);
+        send("POSITION:" + playerId + ":" + x + ":" + y + ":" + passengers + ":" + points + ":" + direction);
     }
 
     public void disconnect() {
@@ -101,7 +97,6 @@ public class NetworkClient {
 
         switch (parts[0]) {
 
-            // Server assigns this client as Player 1 or Player 2
             case "ASSIGNED" -> {
                 if (parts.length >= 2) {
                     playerId = Integer.parseInt(parts[1]);
@@ -109,10 +104,8 @@ public class NetworkClient {
                 }
             }
 
-            // Server broadcasts both players' positions
-            // FORMAT: STATE:p1x:p1y:p1pass:p1pts:p2x:p2y:p2pass:p2pts
             case "STATE" -> {
-                if (parts.length >= 9) applyState(parts);
+                if (parts.length >= 10) applyState(parts);
             }
 
             default -> System.out.println("[Client] Unknown message: " + message);
@@ -133,28 +126,35 @@ public class NetworkClient {
             double p1y    = Double.parseDouble(parts[2]);
             int    p1pass = Integer.parseInt(parts[3]);
             int    p1pts  = Integer.parseInt(parts[4]);
+            String p1dir   = parts[5];
 
-            double p2x    = Double.parseDouble(parts[5]);
-            double p2y    = Double.parseDouble(parts[6]);
-            int    p2pass = Integer.parseInt(parts[7]);
-            int    p2pts  = Integer.parseInt(parts[8]);
+            double p2x    = Double.parseDouble(parts[6]);
+            double p2y    = Double.parseDouble(parts[7]);
+            int    p2pass = Integer.parseInt(parts[8]);
+            int    p2pts  = Integer.parseInt(parts[9]);
+            String p2dir   = parts[10];
 
             Platform.runLater(() -> {
                 if (playerId == 1) {
                     // I am Player 1 — update jeepney2 (opponent) with Player 2's data
-                    jeepney2.setXPos(p2x);
-                    jeepney2.setYPos(p2y);
-                    jeepney2.setPassengers(p2pass);
-                    setAbsolutePoints(jeepney2, p2pts);
+                    if (p2x != 0 && p2y != 0) {
+                        jeepney2.setXPos(p2x);
+                        jeepney2.setYPos(p2y);
+                        jeepney2.setPassengers(p2pass);
+                        setAbsolutePoints(jeepney2, p2pts);
+                        jeepney2.setDirectionImage(p2dir);
+                    }
 
                 } else if (playerId == 2) {
                     // I am Player 2 — update jeepney2 (opponent) with Player 1's data
-                    jeepney2.setXPos(p1x);
-                    jeepney2.setYPos(p1y);
-                    jeepney2.setPassengers(p1pass);
-                    setAbsolutePoints(jeepney2, p1pts);
+                    if (p1x != 0 && p1y != 0) {
+                        jeepney2.setXPos(p1x);
+                        jeepney2.setYPos(p1y);
+                        jeepney2.setPassengers(p1pass);
+                        setAbsolutePoints(jeepney2, p1pts);
+                        jeepney2.setDirectionImage(p1dir);
+                    }
                 }
-                // jeepney1 is NEVER touched here — it moves locally in GameTimer
             });
 
         } catch (NumberFormatException e) {

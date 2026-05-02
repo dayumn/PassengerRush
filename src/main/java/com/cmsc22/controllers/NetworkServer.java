@@ -28,6 +28,8 @@ public class NetworkServer {
     private volatile ClientHandler player1 = null;
     private volatile ClientHandler player2 = null;
 
+    private volatile String p1dir = "DOWN", p2dir = "DOWN";
+
     private ServerSocket serverSocket;
     private boolean running = false;
 
@@ -86,8 +88,6 @@ public class NetworkServer {
         }
     }
 
-    // Broadcasts STATE to both clients at 20 Hz
-    // FORMAT: STATE:p1x:p1y:p1pass:p1pts:p2x:p2y:p2pass:p2pts
     private void startTickLoop() {
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "TickThread");
@@ -98,8 +98,8 @@ public class NetworkServer {
         scheduler.scheduleAtFixedRate(() -> {
             if (player1 == null || player2 == null) return;
 
-            String state = "STATE:" + p1x + ":" + p1y + ":" + p1pass + ":" + p1pts
-                    + ":" + p2x + ":" + p2y + ":" + p2pass + ":" + p2pts;
+            String state = "STATE:" + p1x+":"+p1y+":"+p1pass+":"+p1pts+":"+p1dir
+                    + ":" + p2x+":"+p2y+":"+p2pass+":"+p2pts+":"+p2dir;
 
             player1.send(state);
             player2.send(state);
@@ -150,7 +150,6 @@ public class NetworkServer {
             }
         }
 
-        // FORMAT: POSITION:<playerId>:<x>:<y>:<passengers>:<points>
         private void handleMessage(String raw) {
             if (raw == null || raw.isBlank()) return;
             String[] p = raw.split(":");
@@ -161,9 +160,10 @@ public class NetworkServer {
                     double y    = Double.parseDouble(p[3]);
                     int    pass = Integer.parseInt(p[4]);
                     int    pts  = Integer.parseInt(p[5]);
+                    String dir  = p.length >= 7 ? p[6] : "DOWN";
 
-                    if (playerId == 1) { p1x = x; p1y = y; p1pass = pass; p1pts = pts; }
-                    else               { p2x = x; p2y = y; p2pass = pass; p2pts = pts; }
+                    if (playerId == 1) { p1x=x; p1y=y; p1pass=pass; p1pts=pts; p1dir=dir; }
+                    else               { p2x=x; p2y=y; p2pass=pass; p2pts=pts; p2dir=dir; }
 
                 } catch (NumberFormatException e) {
                     System.err.println("[Server] Bad POSITION: " + raw);

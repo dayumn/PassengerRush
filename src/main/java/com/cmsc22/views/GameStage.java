@@ -121,14 +121,12 @@ public class GameStage {
         topContainer.setAlignment(Pos.TOP_CENTER);
         topContainer.setPadding(new Insets(10, 0, 10, 0));
 
-        // --- Scene (built once) ---
         StackPane stackPane = new StackPane();
         stackPane.getChildren().addAll(backgroundImageView, canvas, topContainer);
         StackPane.setAlignment(topContainer, Pos.TOP_CENTER);
 
         this.scene = new Scene(stackPane, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-        // FIX: make canvas focusable so it receives key events
         canvas.setFocusTraversable(true);
     }
 
@@ -151,14 +149,13 @@ public class GameStage {
         this.stage = primaryStage;
         this.stage.setTitle("Jeepney Game");
 
-        // --- Build GameTimer once with correct labels and stage ---
         this.gametimer = new GameTimer(
                 scene, jeepney1, jeepney2, mapGrid, CELL_SIZE, canvas,
                 jeepney1PointsLabel, jeepney1LoadLabel,
                 jeepney2PointsLabel, jeepney2LoadLabel,
                 gameClockLabel, stage, titleScene);
 
-        // --- Connect to server ---
+
         NetworkClient networkClient = new NetworkClient(
                 SERVER_IP,
                 NetworkClient.DEFAULT_PORT,
@@ -173,12 +170,9 @@ public class GameStage {
             System.out.println("[GameStage] Server not found — solo mode");
         }
 
-        // --- Show stage ---
         this.stage.setScene(scene);
         this.stage.show();
 
-        // FIX: request focus on canvas AFTER stage is shown
-        // so keyboard events are received immediately without clicking
         canvas.requestFocus();
 
         gametimer.registerScene(scene);

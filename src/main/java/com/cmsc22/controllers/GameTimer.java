@@ -34,7 +34,7 @@ public class GameTimer extends AnimationTimer {
     private List<Passenger> passengers = new ArrayList<>();
     private List<LoadingArea> loadingAreas = new ArrayList<>();
     private List<Image> passengerImages = new ArrayList<>();
-    private Random random = new Random();
+    private Random random = new Random(42);
     private Timeline passengerSpawner;
 
     private boolean[][] passengerGrid;
@@ -47,7 +47,7 @@ public class GameTimer extends AnimationTimer {
     private final int UNLOAD_DELAY = 8000;
 
     private long jeepneyCollisionTime = 0;
-    private final int COLLISION_DELAY = 2000;
+    private final int COLLISION_DELAY = 200;
 
     private Timeline jeepney1LoadTimer;
     private Timeline jeepney2LoadTimer;
@@ -81,16 +81,12 @@ public class GameTimer extends AnimationTimer {
     private boolean gameOver = false;
     private Scene titleScene;
 
-    // ─────────────────────────────────────────────
-    // ADDED: network client reference (null = local/solo mode)
-    // ─────────────────────────────────────────────
+    private String jeepney1Direction = "DOWN";
+
+
     private NetworkClient networkClient = null;
 
-    // ─────────────────────────────────────────────
-    // ADDED: optional setter — call this AFTER constructing GameTimer
-    //   if you want multiplayer. If never called, game runs solo exactly
-    //   as before (no behaviour change for local play).
-    // ─────────────────────────────────────────────
+
     public void setNetworkClient(NetworkClient client) {
         this.networkClient = client;
     }
@@ -169,7 +165,7 @@ public class GameTimer extends AnimationTimer {
         double imageHeight = 30;
         jeepney1.setXPos(scene.getWidth() / 2 - 45);
         jeepney1.setYPos(cellSize + (cellSize - imageHeight) / 2 + 30);
-        jeepney2.setXPos(scene.getWidth() / 2 + 45);
+        jeepney2.setXPos(scene.getWidth() / 2 + 60);
         jeepney2.setYPos(cellSize + (cellSize - imageHeight) / 2 + 30);
     }
 
@@ -190,17 +186,7 @@ public class GameTimer extends AnimationTimer {
         return mapGrid[gridY][gridX] >= 1;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // MODIFIED: moveJeepney
-    //
-    // In multiplayer mode (networkClient != null):
-    //   - jeepney1 (this client's player) moves locally AND sends input to server
-    //   - jeepney2's position is NOT moved here — it comes from server STATE
-    //     updates via NetworkClient.applyGameState → Platform.runLater
-    //
-    // In solo mode (networkClient == null):
-    //   - both jeepneys move locally, exactly as before
-    // ─────────────────────────────────────────────────────────────────────────
+
     private void moveJeepney(Jeepney jeepney, KeyCode up, KeyCode down, KeyCode left, KeyCode right) {
         if (jeepneyCollisionTime > 0) return;
 
@@ -215,18 +201,22 @@ public class GameTimer extends AnimationTimer {
             if (activeKeys.contains(KeyCode.W) && canMoveTo(newX, newY - moveAmount)) {
                 newY -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1U.png")));
+                jeepney1Direction = "UP";    // ADD
             } else if (activeKeys.contains(KeyCode.S) && canMoveTo(newX, newY + moveAmount)) {
                 newY += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1D.png")));
+                jeepney1Direction = "DOWN";  // ADD
             } else if (activeKeys.contains(KeyCode.A) && canMoveTo(newX - moveAmount, newY)) {
                 newX -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1L.png")));
+                jeepney1Direction = "LEFT";  // ADD
             } else if (activeKeys.contains(KeyCode.D) && canMoveTo(newX + moveAmount, newY)) {
                 newX += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1R.png")));
+                jeepney1Direction = "RIGHT"; // ADD
             }
         } else {
-            // Solo mode only (networkClient == null) — jeepney2 local controls
+
             if (activeKeys.contains(KeyCode.UP) && canMoveTo(newX, newY - moveAmount)) {
                 newY -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep2U.png")));
@@ -245,28 +235,17 @@ public class GameTimer extends AnimationTimer {
         jeepney.setXPos(newX);
         jeepney.setYPos(newY);
 
-        // Send this client's position to server every frame so opponent can see us move
         if (networkClient != null && jeepney == jeepney1) {
             networkClient.sendPosition(
                     jeepney1.getXPos(),
                     jeepney1.getYPos(),
                     jeepney1.getPassengers(),
-                    jeepney1.getPoints()
+                    jeepney1.getPoints(),
+                    jeepney1Direction
             );
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // MODIFIED: handle()
-    //
-    // One small change: in multiplayer, jeepney2 moves are server-authoritative
-    // so we skip the local moveJeepney call for jeepney2 (already handled inside
-    // moveJeepney via the early-return guard above).
-    //
-    // Everything else — rendering, HUD, timers, collision, powerups — stays
-    // exactly the same. The server's STATE updates flow in via Platform.runLater
-    // in NetworkClient and are reflected automatically in the next render frame.
-    // ─────────────────────────────────────────────────────────────────────────
     @Override
     public void handle(long now) {
         if (gameOver) return;
@@ -319,7 +298,6 @@ public class GameTimer extends AnimationTimer {
         }
     }
 
-    // ── All methods below are UNCHANGED from original ──
 
     private void spawnPassengers() {
         for (LoadingArea area : loadingAreas) {
