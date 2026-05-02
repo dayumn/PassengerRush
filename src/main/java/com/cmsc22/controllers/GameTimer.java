@@ -176,6 +176,8 @@ public class GameTimer extends AnimationTimer {
     private void setupKeyHandling() {
         scene.setOnKeyPressed(e -> activeKeys.add(e.getCode()));
         scene.setOnKeyReleased(e -> activeKeys.remove(e.getCode()));
+        scene.setOnKeyPressed(e -> System.out.println("[DEBUG] Key pressed: " + e.getCode()));
+
     }
 
     private int getGridX(double x) { return (int) x / cellSize; }
@@ -202,38 +204,29 @@ public class GameTimer extends AnimationTimer {
     private void moveJeepney(Jeepney jeepney, KeyCode up, KeyCode down, KeyCode left, KeyCode right) {
         if (jeepneyCollisionTime > 0) return;
 
-        // In multiplayer: jeepney2 is driven by the server, skip local movement
+        // In multiplayer: jeepney2 is the opponent — driven by server, skip local movement
         if (networkClient != null && jeepney == jeepney2) return;
 
         double moveAmount = jeepney.getSpeed();
         double newX = jeepney.getXPos();
         double newY = jeepney.getYPos();
 
-        // ── ADDED: send input to server if in multiplayer mode ──
-        // We determine the action first, then apply it locally too so the
-        // local client feels responsive (client-side prediction, simple version).
-        String action = "IDLE";
-
         if (jeepney == jeepney1) {
             if (activeKeys.contains(KeyCode.W) && canMoveTo(newX, newY - moveAmount)) {
                 newY -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1U.png")));
-                action = "UP";
             } else if (activeKeys.contains(KeyCode.S) && canMoveTo(newX, newY + moveAmount)) {
                 newY += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1D.png")));
-                action = "DOWN";
             } else if (activeKeys.contains(KeyCode.A) && canMoveTo(newX - moveAmount, newY)) {
                 newX -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1L.png")));
-                action = "LEFT";
             } else if (activeKeys.contains(KeyCode.D) && canMoveTo(newX + moveAmount, newY)) {
                 newX += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1R.png")));
-                action = "RIGHT";
             }
         } else {
-            // jeepney2 local controls (solo mode only — networkClient is null here)
+            // Solo mode only (networkClient == null) — jeepney2 local controls
             if (activeKeys.contains(KeyCode.UP) && canMoveTo(newX, newY - moveAmount)) {
                 newY -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep2U.png")));
@@ -252,9 +245,14 @@ public class GameTimer extends AnimationTimer {
         jeepney.setXPos(newX);
         jeepney.setYPos(newY);
 
-        // ── ADDED: fire input to server (only for jeepney1 in multiplayer) ──
+        // Send this client's position to server every frame so opponent can see us move
         if (networkClient != null && jeepney == jeepney1) {
-            networkClient.sendInput(action);
+            networkClient.sendPosition(
+                    jeepney1.getXPos(),
+                    jeepney1.getYPos(),
+                    jeepney1.getPassengers(),
+                    jeepney1.getPoints()
+            );
         }
     }
 
@@ -273,7 +271,14 @@ public class GameTimer extends AnimationTimer {
     public void handle(long now) {
         if (gameOver) return;
 
+        // TEMP DEBUG — remove after fixing
+        System.out.println("J1 pos: x=" + jeepney1.getXPos() + " y=" + jeepney1.getYPos());
+        System.out.println("activeKeys: " + activeKeys);
+        System.out.println("collisionTime: " + jeepneyCollisionTime);
+        System.out.println("networkClient: " + (networkClient != null ? "connected" : "null"));
+
         moveJeepney(jeepney1, KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D);
+        System.out.println("J1 after move: x=" + jeepney1.getXPos() + " y=" + jeepney1.getYPos());
         moveJeepney(jeepney2, KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT);
         // ^ jeepney2 call is a no-op in multiplayer (guard at top of moveJeepney)
 
@@ -566,5 +571,10 @@ public class GameTimer extends AnimationTimer {
         long seconds = (elapsedTime / 1000) % 60;
         long minutes = (elapsedTime / (1000 * 60)) % 60;
         gameClockLabel.setText(String.format("%02d:%02d", minutes, seconds));
+    }
+
+    public void registerScene(Scene newScene) {
+        newScene.setOnKeyPressed(e -> activeKeys.add(e.getCode()));
+        newScene.setOnKeyReleased(e -> activeKeys.remove(e.getCode()));
     }
 }
