@@ -30,6 +30,15 @@ public class Jeepney extends Sprite {
         this.imgRight = imageRight;
     }
 
+    public void setDirectionImage(String direction) {
+        switch (direction) {
+            case "UP"    -> setImage(imgUp);
+            case "DOWN"  -> setImage(imgDown);
+            case "LEFT"  -> setImage(imgLeft);
+            case "RIGHT" -> setImage(imgRight);
+        }
+    }
+
     // Getters and setters
     public static Jeepney getWinner() {
         return winner;
