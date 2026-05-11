@@ -40,8 +40,10 @@ public class GameStage {
     private Label jeepney2LoadLabel;
     private Label gameClockLabel;
 
-    // ── Change to server machine's IP for LAN play ──
-    private static final String SERVER_IP = "localhost";
+    private static NetworkClient sharedNetworkClient = null;
+
+
+    private static final String SERVER_IP = "10.12.34.66";
 
     private final int[][] mapGrid = {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -102,8 +104,8 @@ public class GameStage {
         gameClockLabel      = createLabel("00:00");
 
         // --- HUD layout ---
-        VBox jeepney1Container = createVBox("myJeepney",   jeepney1PointsLabel, jeepney1LoadLabel);
-        VBox jeepney2Container = createVBox("yourJeepney", jeepney2PointsLabel, jeepney2LoadLabel);
+        VBox jeepney1Container = createVBox("Player 1",   jeepney1PointsLabel, jeepney1LoadLabel);
+        VBox jeepney2Container = createVBox("Player 2", jeepney2PointsLabel, jeepney2LoadLabel);
 
         jeepney1Container.setMaxWidth(300);
         jeepney2Container.setMaxWidth(300);
@@ -145,38 +147,51 @@ public class GameStage {
         return label;
     }
 
+
     public void setStage(Stage primaryStage, Scene titleScene) {
         this.stage = primaryStage;
         this.stage.setTitle("Jeepney Game");
 
+        // Build GameTimer first
         this.gametimer = new GameTimer(
                 scene, jeepney1, jeepney2, mapGrid, CELL_SIZE, canvas,
                 jeepney1PointsLabel, jeepney1LoadLabel,
                 jeepney2PointsLabel, jeepney2LoadLabel,
                 gameClockLabel, stage, titleScene);
 
+        // FIX #5 — always disconnect old connection cleanly before making a new one.
+        // We can't reuse the old client because it holds stale jeepney references
+        // from the previous GameStage instance. Always create a fresh connection.
+        if (sharedNetworkClient != null) {
+            sharedNetworkClient.disconnect();
+            sharedNetworkClient = null;
+        }
 
-        NetworkClient networkClient = new NetworkClient(
-                SERVER_IP,
-                NetworkClient.DEFAULT_PORT,
-                jeepney1,
-                jeepney2);
+        sharedNetworkClient = new NetworkClient(
+                SERVER_IP, NetworkClient.DEFAULT_PORT, jeepney1, jeepney2);
 
-        if (networkClient.connect()) {
-            networkClient.startListening();
-            gametimer.setNetworkClient(networkClient);
+        if (sharedNetworkClient.connect()) {
+            sharedNetworkClient.startListening();
+            gametimer.setNetworkClient(sharedNetworkClient);
+
+            // FIX #1 — register listener so START signal triggers game begin
+            sharedNetworkClient.setGameStartListener(() -> gametimer.startGame());
+
+            // FIX #3 — register listener so FELL signal hides opponent
+            sharedNetworkClient.setFellListener(() -> gametimer.hideOpponent());
+
             System.out.println("[GameStage] Multiplayer mode ON");
         } else {
+            // Server not reachable — run in solo mode, start immediately
             System.out.println("[GameStage] Server not found — solo mode");
+            sharedNetworkClient = null;
+            gametimer.startGame(); // solo mode starts right away
         }
 
         this.stage.setScene(scene);
         this.stage.show();
-
         canvas.requestFocus();
-
         gametimer.registerScene(scene);
-
         this.gametimer.start();
     }
 }
