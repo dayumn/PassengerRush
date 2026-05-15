@@ -55,6 +55,7 @@ public class NetworkServer {
             running = true;
             System.out.println("[Server] Listening on port " + port);
             System.out.println("[Server] Waiting for 2 players...");
+            ServerDiscovery.startBroadcasting(); // broadcast presence to clients on LAN
             startTickLoop();
             acceptClients();
         } catch (IOException e) {
