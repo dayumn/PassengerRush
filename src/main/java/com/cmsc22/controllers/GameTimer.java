@@ -17,6 +17,8 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
@@ -47,7 +49,8 @@ public class GameTimer extends AnimationTimer {
     private final int UNLOAD_DELAY = 8000;
 
     private long jeepneyCollisionTime = 0;
-    private final int COLLISION_DELAY = 200;
+    private final int COLLISION_DELAY = 3000;           // 3 second collision buffer
+    private final long SPAWN_GRACE_PERIOD = 5000;       // 5 second no-collision at start
 
     private Timeline jeepney1LoadTimer;
     private Timeline jeepney2LoadTimer;
@@ -83,18 +86,31 @@ public class GameTimer extends AnimationTimer {
 
     private String jeepney1Direction = "DOWN";
 
-
     private NetworkClient networkClient = null;
 
+    // FIX #1 — game waits for START signal from server before ticking
+    private boolean gameStarted = false;
 
     public void setNetworkClient(NetworkClient client) {
         this.networkClient = client;
     }
 
-    // Original constructor — unchanged
+    // FIX #1 — called by NetworkClient.GameStartListener when server sends START
+    public void startGame() {
+        gameStarted = true;
+        startTime = System.currentTimeMillis(); // sync timer to server START signal
+        System.out.println("[GameTimer] Game started by server signal.");
+    }
+
+    // FIX #3 — called by NetworkClient.FellListener when opponent hits manhole
+    public void hideOpponent() {
+        jeepney2.setVisible(false);
+        jeepney2.setPassengers(0);
+    }
+
     public GameTimer(Scene scene, Jeepney jeepney1, Jeepney jeepney2, int[][] mapGrid, int cellSize, Canvas canvas,
-            Label jeepney1PointsLabel, Label jeepney1LoadLabel, Label jeepney2PointsLabel, Label jeepney2LoadLabel,
-            Label gameClockLabel, Stage primaryStage, Scene titleScene) {
+                     Label jeepney1PointsLabel, Label jeepney1LoadLabel, Label jeepney2PointsLabel, Label jeepney2LoadLabel,
+                     Label gameClockLabel, Stage primaryStage, Scene titleScene) {
         this.scene = scene;
         this.primaryStage = primaryStage;
         this.titleScene = titleScene;
@@ -163,17 +179,19 @@ public class GameTimer extends AnimationTimer {
 
     private void setInitialPositions() {
         double imageHeight = 30;
+
+        // Player 1 spawn — adjust these two values to reposition
         jeepney1.setXPos(scene.getWidth() / 2 - 45);
         jeepney1.setYPos(cellSize + (cellSize - imageHeight) / 2 + 30);
-        jeepney2.setXPos(scene.getWidth() / 2 + 60);
+
+        // Player 2 spawn — 6 cells to the right of Player 1
+        jeepney2.setXPos(scene.getWidth() / 2 - 45 + (cellSize * 6));
         jeepney2.setYPos(cellSize + (cellSize - imageHeight) / 2 + 30);
     }
 
     private void setupKeyHandling() {
         scene.setOnKeyPressed(e -> activeKeys.add(e.getCode()));
         scene.setOnKeyReleased(e -> activeKeys.remove(e.getCode()));
-        scene.setOnKeyPressed(e -> System.out.println("[DEBUG] Key pressed: " + e.getCode()));
-
     }
 
     private int getGridX(double x) { return (int) x / cellSize; }
@@ -185,7 +203,6 @@ public class GameTimer extends AnimationTimer {
         if (gridX < 0 || gridY < 0 || gridX >= mapGrid[0].length || gridY >= mapGrid.length) return false;
         return mapGrid[gridY][gridX] >= 1;
     }
-
 
     private void moveJeepney(Jeepney jeepney, KeyCode up, KeyCode down, KeyCode left, KeyCode right) {
         if (jeepneyCollisionTime > 0) return;
@@ -201,22 +218,22 @@ public class GameTimer extends AnimationTimer {
             if (activeKeys.contains(KeyCode.W) && canMoveTo(newX, newY - moveAmount)) {
                 newY -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1U.png")));
-                jeepney1Direction = "UP";    // ADD
+                jeepney1Direction = "UP";
             } else if (activeKeys.contains(KeyCode.S) && canMoveTo(newX, newY + moveAmount)) {
                 newY += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1D.png")));
-                jeepney1Direction = "DOWN";  // ADD
+                jeepney1Direction = "DOWN";
             } else if (activeKeys.contains(KeyCode.A) && canMoveTo(newX - moveAmount, newY)) {
                 newX -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1L.png")));
-                jeepney1Direction = "LEFT";  // ADD
+                jeepney1Direction = "LEFT";
             } else if (activeKeys.contains(KeyCode.D) && canMoveTo(newX + moveAmount, newY)) {
                 newX += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1R.png")));
-                jeepney1Direction = "RIGHT"; // ADD
+                jeepney1Direction = "RIGHT";
             }
         } else {
-
+            // Solo mode only (networkClient == null) — jeepney2 local controls
             if (activeKeys.contains(KeyCode.UP) && canMoveTo(newX, newY - moveAmount)) {
                 newY -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep2U.png")));
@@ -235,6 +252,7 @@ public class GameTimer extends AnimationTimer {
         jeepney.setXPos(newX);
         jeepney.setYPos(newY);
 
+        // Send position + direction to server every frame
         if (networkClient != null && jeepney == jeepney1) {
             networkClient.sendPosition(
                     jeepney1.getXPos(),
@@ -250,42 +268,44 @@ public class GameTimer extends AnimationTimer {
     public void handle(long now) {
         if (gameOver) return;
 
-        // TEMP DEBUG — remove after fixing
-        System.out.println("J1 pos: x=" + jeepney1.getXPos() + " y=" + jeepney1.getYPos());
-        System.out.println("activeKeys: " + activeKeys);
-        System.out.println("collisionTime: " + jeepneyCollisionTime);
-        System.out.println("networkClient: " + (networkClient != null ? "connected" : "null"));
+        GraphicsContext gc = canvas.getGraphicsContext2D();
+
+        // FIX #1 — show waiting screen until server sends START
+        // In solo mode (networkClient == null), skip straight to game
+        if (networkClient != null && !gameStarted) {
+            gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            gc.setFill(Color.BLACK);
+            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            gc.setFill(Color.WHITE);
+            gc.setFont(Font.font("Press Start 2P", 24));
+            gc.fillText("Waiting for Player 2...",
+                    canvas.getWidth() / 2 - 220,
+                    canvas.getHeight() / 2);
+            return;
+        }
 
         moveJeepney(jeepney1, KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D);
-        System.out.println("J1 after move: x=" + jeepney1.getXPos() + " y=" + jeepney1.getYPos());
         moveJeepney(jeepney2, KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT);
-        // ^ jeepney2 call is a no-op in multiplayer (guard at top of moveJeepney)
 
-        GraphicsContext gc = canvas.getGraphicsContext2D();
         gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
 
         handlePassengerPickup(jeepney1, now);
-        handlePassengerPickup(jeepney2, now);
+        // FIX #3 — skip pickup/unload for invisible opponent
+        if (jeepney2.isVisible()) handlePassengerPickup(jeepney2, now);
         handlePassengerUnload(jeepney1, now);
-        handlePassengerUnload(jeepney2, now);
+        if (jeepney2.isVisible()) handlePassengerUnload(jeepney2, now);
 
         handleJeepneyCollision(now);
         handlePowerUps(now);
         handlePowerUpActivation(now);
         handleManholeCollision();
 
-        for (Passenger passenger : passengers) {
-            passenger.render(gc);
-        }
-        for (PowerUp powerUp : powerUps) {
-            powerUp.render(gc);
-        }
-        if (manhole != null) {
-            manhole.render(gc);
-        }
+        for (Passenger passenger : passengers) passenger.render(gc);
+        for (PowerUp powerUp : powerUps)       powerUp.render(gc);
+        if (manhole != null)                   manhole.render(gc);
 
         jeepney1.render(gc, jeepney1Invincible);
-        jeepney2.render(gc, jeepney2Invincible);
+        jeepney2.render(gc, jeepney2Invincible); // render() checks isVisible() internally
 
         updateLabels();
         updateClock();
@@ -294,10 +314,11 @@ public class GameTimer extends AnimationTimer {
         if (elapsedTime >= 180000) {
             gameOver = true;
             Jeepney winner = determineWinner();
+            // FIX #5 — disconnect cleanly when game ends so slot is freed
+            if (networkClient != null) networkClient.disconnect();
             new GameOverScene(winner, primaryStage, titleScene);
         }
     }
-
 
     private void spawnPassengers() {
         for (LoadingArea area : loadingAreas) {
@@ -429,12 +450,20 @@ public class GameTimer extends AnimationTimer {
     }
 
     private void handleJeepneyCollision(long now) {
+        // FIX #2 — no collision during spawn grace period (first 5 seconds)
+        long elapsedMs = System.currentTimeMillis() - startTime;
+        if (elapsedMs < SPAWN_GRACE_PERIOD) return;
+
+        // FIX #3 — skip collision if opponent is invisible (fell into manhole)
+        if (!jeepney2.isVisible()) return;
+
         if (jeepney1.collidesWith(jeepney2)) {
             if (jeepneyCollisionTime == 0) {
                 jeepneyCollisionTime = now;
                 if (!jeepney1Invincible) jeepney1.setPassengers(0);
                 if (!jeepney2Invincible) jeepney2.setPassengers(0);
-                new Timeline(new KeyFrame(Duration.millis(COLLISION_DELAY), e -> jeepneyCollisionTime = 0)).play();
+                new Timeline(new KeyFrame(Duration.millis(COLLISION_DELAY),
+                        e -> jeepneyCollisionTime = 0)).play();
             }
             if (jeepney1Invincible) jeepney1Invincible = false;
             if (jeepney2Invincible) jeepney2Invincible = false;
@@ -452,8 +481,10 @@ public class GameTimer extends AnimationTimer {
             double x = col * cellSize + cellSize / 2;
             double y = row * cellSize + cellSize / 2;
             String powerUpType = random.nextBoolean() ? (random.nextBoolean() ? "speed" : "crack") : "invincibility";
-            Image powerUpImage = powerUpType.equals("speed") ? speedImage : (powerUpType.equals("crack") ? crackImage : invincibilityImage);
-            PowerUp powerUp = new PowerUp(x, y, powerUpType, powerUpImage, 3000, powerUpType.equals("speed") ? 3 : (powerUpType.equals("crack") ? -3 : 0));
+            Image powerUpImage = powerUpType.equals("speed") ? speedImage
+                    : (powerUpType.equals("crack") ? crackImage : invincibilityImage);
+            PowerUp powerUp = new PowerUp(x, y, powerUpType, powerUpImage, 3000,
+                    powerUpType.equals("speed") ? 3 : (powerUpType.equals("crack") ? -3 : 0));
             powerUps.add(powerUp);
             powerUpRespawnTime = System.currentTimeMillis() + POWERUP_RESPAWN_DELAY;
         }
@@ -467,7 +498,8 @@ public class GameTimer extends AnimationTimer {
                 jeepney1PowerUps.add(powerUp);
                 if (powerUp.getType().equals("invincibility")) jeepney1Invincible = true;
                 spawnPowerUp();
-            } else if (jeepney2.collidesWith(powerUp) && jeepney2PowerUps.size() < 3) {
+            } else if (jeepney2.isVisible() && jeepney2.collidesWith(powerUp) && jeepney2PowerUps.size() < 3) {
+                // FIX #3 — only pick up powerups if jeepney2 is visible
                 powerUps.remove(i);
                 jeepney2PowerUps.add(powerUp);
                 if (powerUp.getType().equals("invincibility")) jeepney2Invincible = true;
@@ -517,17 +549,24 @@ public class GameTimer extends AnimationTimer {
         manhole = new Manhole(x, y, manholeImage);
     }
 
+    // FIX #3 — manhole hides jeepney and notifies server instead of resetting position
     private void handleManholeCollision() {
-        if (manhole != null) {
-            if (jeepney1.collidesWith(manhole)) {
-                jeepney1.setXPos(initialJeepney1X);
-                jeepney1.setYPos(initialJeepney1Y);
-                jeepney1.setPassengers(0);
-            } else if (jeepney2.collidesWith(manhole)) {
-                jeepney2.setXPos(initialJeepney2X);
-                jeepney2.setYPos(initialJeepney2Y);
-                jeepney2.setPassengers(0);
+        if (manhole == null) return;
+
+        // Local jeepney hits manhole
+        if (jeepney1.isVisible() && jeepney1.collidesWith(manhole)) {
+            jeepney1.setVisible(false);
+            jeepney1.setPassengers(0);
+            if (networkClient != null) {
+                networkClient.sendFell(); // tell server we fell
             }
+        }
+
+        // Opponent hits manhole — solo mode only
+        // In multiplayer the opponent's visibility is controlled by server FELL broadcast
+        if (networkClient == null && jeepney2.isVisible() && jeepney2.collidesWith(manhole)) {
+            jeepney2.setVisible(false);
+            jeepney2.setPassengers(0);
         }
     }
 

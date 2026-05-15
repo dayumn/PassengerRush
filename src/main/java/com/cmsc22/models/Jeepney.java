@@ -21,6 +21,18 @@ public class Jeepney extends Sprite {
     private Image imgLeft;
     private Image imgRight;
 
+    private boolean visible = true;
+
+    public boolean isVisible() {
+        return visible;
+    }
+
+    public void setVisible(boolean visible) {
+        this.visible = visible;
+    }
+
+
+
     public Jeepney(double xPos, double yPos, String name, Image imageUp, Image imageDown, Image imageLeft, Image imageRight) {
         super(xPos, yPos, imageDown); 
         this.name = name;
@@ -38,6 +50,8 @@ public class Jeepney extends Sprite {
             case "RIGHT" -> setImage(imgRight);
         }
     }
+
+
 
     // Getters and setters
     public static Jeepney getWinner() {
@@ -99,13 +113,13 @@ public class Jeepney extends Sprite {
     public void setPassengers(int numPassengers) { 
         this.passengers = numPassengers;
     }
-    
+
     public void render(GraphicsContext gc, boolean isInvincible) {
+        if (!visible) return;  // FIX #3 — don't render if fell into manhole
         if (img != null) {
             gc.drawImage(this.img, this.xPos - this.width / 2, this.yPos - this.height / 2);
-            // Invicibility
             if (isInvincible) {
-                gc.setFill(Color.GREEN.deriveColor(1, 1, 1, 0.5)); 
+                gc.setFill(Color.GREEN.deriveColor(1, 1, 1, 0.5));
                 gc.fillRect(this.xPos - this.width / 2, this.yPos - this.height / 2, this.width, this.height);
             }
         }
