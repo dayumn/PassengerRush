@@ -13,30 +13,43 @@ public class NetworkClient {
 
     public static final int DEFAULT_PORT = 5050;
 
-    private final String  host;
-    private final int     port;
+    private final String host;
+    private final int port;
     private final Jeepney jeepney1; // this client's jeepney — never overwritten from server
     private final Jeepney jeepney2; // opponent's jeepney — updated from server STATE
 
-    private Socket       socket;
-    private PrintWriter  out;
+    private Socket socket;
+    private PrintWriter out;
     private BufferedReader in;
 
-    private int     playerId  = -1;
+    private int playerId = -1;
     private boolean connected = false;
-    private boolean running   = false;
+    private boolean running = false;
 
     // FIX #1 — listener that GameTimer registers to know when to start
-    public interface GameStartListener { void onGameStart(); }
+    public interface GameStartListener {
+        void onGameStart();
+    }
+
     private GameStartListener gameStartListener = null;
 
     // FIX #3 — listener that GameTimer registers to know when opponent fell
-    public interface FellListener { void onOpponentFell(); }
+    public interface FellListener {
+        void onOpponentFell();
+    }
+
     private FellListener fellListener = null;
 
+    // Chat listener — called on the JavaFX thread when a CHAT message arrives
+    public interface ChatListener {
+        void onChatMessage(int senderId, String message);
+    }
+
+    private ChatListener chatListener = null;
+
     public NetworkClient(String host, int port, Jeepney jeepney1, Jeepney jeepney2) {
-        this.host     = host;
-        this.port     = port;
+        this.host = host;
+        this.port = port;
         this.jeepney1 = jeepney1;
         this.jeepney2 = jeepney2;
     }
@@ -51,11 +64,16 @@ public class NetworkClient {
         this.fellListener = listener;
     }
 
+    // Chat — registered by GameTimer/GameStage to update chat UI
+    public void setChatListener(ChatListener listener) {
+        this.chatListener = listener;
+    }
+
     public boolean connect() {
         try {
-            socket    = new Socket(host, port);
-            out       = new PrintWriter(socket.getOutputStream(), true);
-            in        = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            socket = new Socket(host, port);
+            out = new PrintWriter(socket.getOutputStream(), true);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             connected = true;
             System.out.println("[Client] Connected to " + host + ":" + port);
             return true;
@@ -66,7 +84,8 @@ public class NetworkClient {
     }
 
     public void startListening() {
-        if (!connected) return;
+        if (!connected)
+            return;
         running = true;
 
         Thread t = new Thread(() -> {
@@ -76,7 +95,8 @@ public class NetworkClient {
                     handleMessage(message);
                 }
             } catch (SocketException e) {
-                if (running) System.err.println("[Client] Connection lost.");
+                if (running)
+                    System.err.println("[Client] Connection lost.");
             } catch (IOException e) {
                 System.err.println("[Client] Read error: " + e.getMessage());
             } finally {
@@ -90,39 +110,61 @@ public class NetworkClient {
 
     // FORMAT: POSITION:<id>:<x>:<y>:<pass>:<pts>:<dir>
     public void sendPosition(double x, double y, int passengers, int points, String direction) {
-        if (!connected || playerId == -1) return;
+        if (!connected || playerId == -1)
+            return;
         send("POSITION:" + playerId + ":" + x + ":" + y + ":" + passengers + ":" + points + ":" + direction);
     }
 
     // FIX #3 — tell server this client's jeepney fell into manhole
     public void sendFell() {
-        if (!connected || playerId == -1) return;
+        if (!connected || playerId == -1)
+            return;
         send("FELL:" + playerId);
     }
 
     // FIX #5 — tell server this client is leaving so slot is freed
     public void sendLeave() {
-        if (!connected) return;
+        if (!connected)
+            return;
         send("LEAVE");
+    }
+
+    // Send a chat message to the server — FORMAT: CHAT:<playerId>:<text>
+    public void sendChat(String text) {
+        if (!connected || playerId == -1 || text == null || text.isBlank())
+            return;
+        // Trim to 200 chars to keep messages reasonable
+        String safe = text.trim().substring(0, Math.min(text.trim().length(), 200));
+        send("CHAT:" + playerId + ":" + safe);
     }
 
     public void disconnect() {
         sendLeave();
-        running   = false;
+        running = false;
         connected = false;
-        try { if (socket != null && !socket.isClosed()) socket.close(); }
-        catch (IOException ignored) {}
+        try {
+            if (socket != null && !socket.isClosed())
+                socket.close();
+        } catch (IOException ignored) {
+        }
     }
 
-    public int     getPlayerId()  { return playerId;          }
-    public boolean isConnected()  { return connected && running; }
+    public int getPlayerId() {
+        return playerId;
+    }
+
+    public boolean isConnected() {
+        return connected && running;
+    }
 
     private void send(String message) {
-        if (out != null) out.println(message);
+        if (out != null)
+            out.println(message);
     }
 
     private void handleMessage(String message) {
-        if (message == null || message.isBlank()) return;
+        if (message == null || message.isBlank())
+            return;
         String[] parts = message.split(":");
 
         switch (parts[0]) {
@@ -147,14 +189,16 @@ public class NetworkClient {
             case "START" -> {
                 System.out.println("[Client] Received START — game beginning.");
                 Platform.runLater(() -> {
-                    if (gameStartListener != null) gameStartListener.onGameStart();
+                    if (gameStartListener != null)
+                        gameStartListener.onGameStart();
                 });
             }
 
             // STATE format:
             // STATE:p1x:p1y:p1pass:p1pts:p1dir:p1visible:p2x:p2y:p2pass:p2pts:p2dir:p2visible
             case "STATE" -> {
-                if (parts.length >= 13) applyState(parts);
+                if (parts.length >= 13)
+                    applyState(parts);
             }
 
             // FIX #3 — opponent fell into manhole, hide their jeepney
@@ -164,9 +208,24 @@ public class NetworkClient {
                     // Only act if it's the OPPONENT who fell (not us)
                     if (whoFell != playerId) {
                         Platform.runLater(() -> {
-                            if (fellListener != null) fellListener.onOpponentFell();
+                            if (fellListener != null)
+                                fellListener.onOpponentFell();
                         });
                     }
+                }
+            }
+
+            // CHAT — server relayed a chat message
+            // FORMAT: CHAT:<senderId>:<message text>
+            case "CHAT" -> {
+                if (parts.length >= 3) {
+                    int senderId = Integer.parseInt(parts[1]);
+                    // Rejoin in case message contains colons
+                    String chatText = message.substring(message.indexOf(':', message.indexOf(':') + 1) + 1);
+                    Platform.runLater(() -> {
+                        if (chatListener != null)
+                            chatListener.onChatMessage(senderId, chatText);
+                    });
                 }
             }
 
@@ -176,24 +235,24 @@ public class NetworkClient {
 
     // KEY LOGIC:
     // jeepney1 = local player — NEVER updated from server
-    // jeepney2 = opponent     — always updated from server STATE
+    // jeepney2 = opponent — always updated from server STATE
     //
     // If I am Player 1 → opponent data is p2* fields
     // If I am Player 2 → opponent data is p1* fields
     private void applyState(String[] parts) {
         try {
-            double  p1x       = Double.parseDouble(parts[1]);
-            double  p1y       = Double.parseDouble(parts[2]);
-            int     p1pass    = Integer.parseInt(parts[3]);
-            int     p1pts     = Integer.parseInt(parts[4]);
-            String  p1dir     = parts[5];
+            double p1x = Double.parseDouble(parts[1]);
+            double p1y = Double.parseDouble(parts[2]);
+            int p1pass = Integer.parseInt(parts[3]);
+            int p1pts = Integer.parseInt(parts[4]);
+            String p1dir = parts[5];
             boolean p1visible = Boolean.parseBoolean(parts[6]);
 
-            double  p2x       = Double.parseDouble(parts[7]);
-            double  p2y       = Double.parseDouble(parts[8]);
-            int     p2pass    = Integer.parseInt(parts[9]);
-            int     p2pts     = Integer.parseInt(parts[10]);
-            String  p2dir     = parts[11];
+            double p2x = Double.parseDouble(parts[7]);
+            double p2y = Double.parseDouble(parts[8]);
+            int p2pass = Integer.parseInt(parts[9]);
+            int p2pts = Integer.parseInt(parts[10]);
+            String p2dir = parts[11];
             boolean p2visible = Boolean.parseBoolean(parts[12]);
 
             Platform.runLater(() -> {
@@ -227,6 +286,7 @@ public class NetworkClient {
 
     private void setAbsolutePoints(Jeepney j, int serverTotal) {
         int delta = serverTotal - j.getPoints();
-        if (delta != 0) j.incrementPoints(delta);
+        if (delta != 0)
+            j.incrementPoints(delta);
     }
 }

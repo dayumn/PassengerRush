@@ -223,6 +223,18 @@ public class NetworkServer {
                     System.out.println("[Server] Player " + playerId + " sent LEAVE.");
                     connected = false;
                 }
+
+                // CHAT — relay message to both players
+                // FORMAT: CHAT:<senderId>:<message text (may contain colons)>
+                case "CHAT" -> {
+                    if (p.length >= 3) {
+                        // Rejoin parts after index 2 to allow colons in chat text
+                        String chatText = raw.substring(raw.indexOf(':', raw.indexOf(':') + 1) + 1);
+                        String chatMsg = "CHAT:" + playerId + ":" + chatText;
+                        broadcast(chatMsg);
+                        System.out.println("[Server] Chat from P" + playerId + ": " + chatText);
+                    }
+                }
             }
         }
 

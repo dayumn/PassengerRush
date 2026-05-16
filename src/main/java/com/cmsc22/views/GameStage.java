@@ -187,6 +187,10 @@ public class GameStage {
                         // FIX #3 — FELL signal hides opponent jeepney
                         sharedNetworkClient.setFellListener(() -> gametimer.hideOpponent());
 
+                        // CHAT — relay messages to the chat overlay
+                        sharedNetworkClient.setChatListener((senderId, text) ->
+                                gametimer.addChatMessage(senderId, text));
+
                         System.out.println("[GameStage] Multiplayer ON — connected to " + serverIP);
                     } else {
                         // Discovered but couldn't connect — fall back to solo
