@@ -19,7 +19,9 @@ public class Sprite {
     }
 
     public Rectangle2D getBounds() {
-        return new Rectangle2D(this.xPos, this.yPos, this.width, this.height);
+        double hitWidth = this.width * 0.75;
+        double hitHeight = this.height * 0.75;
+        return new Rectangle2D(this.xPos - hitWidth / 2, this.yPos - hitHeight / 2, hitWidth, hitHeight);
     }
 
     protected void setSize() {

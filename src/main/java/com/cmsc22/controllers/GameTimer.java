@@ -49,7 +49,9 @@ public class GameTimer extends AnimationTimer {
     private final int UNLOAD_DELAY = 8000;
 
     private long jeepneyCollisionTime = 0;
-    private final int COLLISION_DELAY = 3000;           // 3 second collision buffer
+    private long jeepneyFreezeTime = 0;
+    private final int FREEZE_DELAY = 1000;              // 1 second freeze
+    private final int COLLISION_DELAY = 3000;           // 3 second total collision buffer (1s freeze + 2s immunity)
     private final long SPAWN_GRACE_PERIOD = 5000;       // 5 second no-collision at start
 
     private Timeline jeepney1LoadTimer;
@@ -72,7 +74,7 @@ public class GameTimer extends AnimationTimer {
 
     private Image manholeImage = new Image(getClass().getResourceAsStream("/assets/images/manhole.png"));
     private Manhole manhole;
-    private final double initialJeepney1X, initialJeepney1Y, initialJeepney2X, initialJeepney2Y;
+    private double initialJeepney1X, initialJeepney1Y, initialJeepney2X, initialJeepney2Y;
 
     private Label jeepney1PointsLabel;
     private Label jeepney1LoadLabel;
@@ -88,6 +90,10 @@ public class GameTimer extends AnimationTimer {
 
     private NetworkClient networkClient = null;
 
+    private Image backgroundImage;
+    private final double ZOOM_FACTOR = 2.0;
+    private final long INTRO_DURATION_MS = 2500;
+
     // FIX #1 — game waits for START signal from server before ticking
     private boolean gameStarted = false;
 
@@ -99,6 +105,12 @@ public class GameTimer extends AnimationTimer {
     public void startGame() {
         gameStarted = true;
         startTime = System.currentTimeMillis(); // sync timer to server START signal
+        
+        initialJeepney1X = jeepney1.getXPos();
+        initialJeepney1Y = jeepney1.getYPos();
+        initialJeepney2X = jeepney2.getXPos();
+        initialJeepney2Y = jeepney2.getYPos();
+
         System.out.println("[GameTimer] Game started by server signal.");
     }
 
@@ -110,10 +122,11 @@ public class GameTimer extends AnimationTimer {
 
     public GameTimer(Scene scene, Jeepney jeepney1, Jeepney jeepney2, int[][] mapGrid, int cellSize, Canvas canvas,
                      Label jeepney1PointsLabel, Label jeepney1LoadLabel, Label jeepney2PointsLabel, Label jeepney2LoadLabel,
-                     Label gameClockLabel, Stage primaryStage, Scene titleScene) {
+                     Label gameClockLabel, Stage primaryStage, Scene titleScene, Image backgroundImage) {
         this.scene = scene;
         this.primaryStage = primaryStage;
         this.titleScene = titleScene;
+        this.backgroundImage = backgroundImage;
 
         this.jeepney1 = jeepney1;
         this.jeepney2 = jeepney2;
@@ -204,8 +217,27 @@ public class GameTimer extends AnimationTimer {
         return mapGrid[gridY][gridX] >= 1;
     }
 
+    private boolean collidesWithOpponent(Jeepney jeepney, double newX, double newY) {
+        if (jeepneyCollisionTime > 0) return false; // Immunity: allow passing through!
+        
+        Jeepney opponent = (jeepney == jeepney1) ? jeepney2 : jeepney1;
+        if (!opponent.isVisible()) return false;
+        
+        double oldX = jeepney.getXPos();
+        double oldY = jeepney.getYPos();
+        jeepney.setXPos(newX);
+        jeepney.setYPos(newY);
+        boolean collides = jeepney.collidesWith(opponent);
+        jeepney.setXPos(oldX);
+        jeepney.setYPos(oldY);
+        return collides;
+    }
+
     private void moveJeepney(Jeepney jeepney, KeyCode up, KeyCode down, KeyCode left, KeyCode right) {
-        if (jeepneyCollisionTime > 0) return;
+        if (jeepneyFreezeTime > 0) return;
+
+        long elapsedMs = System.currentTimeMillis() - startTime;
+        if (gameStarted && elapsedMs < INTRO_DURATION_MS) return;
 
         // In multiplayer: jeepney2 is the opponent — driven by server, skip local movement
         if (networkClient != null && jeepney == jeepney2) return;
@@ -215,35 +247,35 @@ public class GameTimer extends AnimationTimer {
         double newY = jeepney.getYPos();
 
         if (jeepney == jeepney1) {
-            if (activeKeys.contains(KeyCode.W) && canMoveTo(newX, newY - moveAmount)) {
+            if (activeKeys.contains(KeyCode.W) && canMoveTo(newX, newY - moveAmount) && !collidesWithOpponent(jeepney, newX, newY - moveAmount)) {
                 newY -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1U.png")));
                 jeepney1Direction = "UP";
-            } else if (activeKeys.contains(KeyCode.S) && canMoveTo(newX, newY + moveAmount)) {
+            } else if (activeKeys.contains(KeyCode.S) && canMoveTo(newX, newY + moveAmount) && !collidesWithOpponent(jeepney, newX, newY + moveAmount)) {
                 newY += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1D.png")));
                 jeepney1Direction = "DOWN";
-            } else if (activeKeys.contains(KeyCode.A) && canMoveTo(newX - moveAmount, newY)) {
+            } else if (activeKeys.contains(KeyCode.A) && canMoveTo(newX - moveAmount, newY) && !collidesWithOpponent(jeepney, newX - moveAmount, newY)) {
                 newX -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1L.png")));
                 jeepney1Direction = "LEFT";
-            } else if (activeKeys.contains(KeyCode.D) && canMoveTo(newX + moveAmount, newY)) {
+            } else if (activeKeys.contains(KeyCode.D) && canMoveTo(newX + moveAmount, newY) && !collidesWithOpponent(jeepney, newX + moveAmount, newY)) {
                 newX += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep1R.png")));
                 jeepney1Direction = "RIGHT";
             }
         } else {
             // Solo mode only (networkClient == null) — jeepney2 local controls
-            if (activeKeys.contains(KeyCode.UP) && canMoveTo(newX, newY - moveAmount)) {
+            if (activeKeys.contains(KeyCode.UP) && canMoveTo(newX, newY - moveAmount) && !collidesWithOpponent(jeepney, newX, newY - moveAmount)) {
                 newY -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep2U.png")));
-            } else if (activeKeys.contains(KeyCode.DOWN) && canMoveTo(newX, newY + moveAmount)) {
+            } else if (activeKeys.contains(KeyCode.DOWN) && canMoveTo(newX, newY + moveAmount) && !collidesWithOpponent(jeepney, newX, newY + moveAmount)) {
                 newY += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep2D.png")));
-            } else if (activeKeys.contains(KeyCode.LEFT) && canMoveTo(newX - moveAmount, newY)) {
+            } else if (activeKeys.contains(KeyCode.LEFT) && canMoveTo(newX - moveAmount, newY) && !collidesWithOpponent(jeepney, newX - moveAmount, newY)) {
                 newX -= moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep2L.png")));
-            } else if (activeKeys.contains(KeyCode.RIGHT) && canMoveTo(newX + moveAmount, newY)) {
+            } else if (activeKeys.contains(KeyCode.RIGHT) && canMoveTo(newX + moveAmount, newY) && !collidesWithOpponent(jeepney, newX + moveAmount, newY)) {
                 newX += moveAmount;
                 jeepney.setImage(new Image(getClass().getResourceAsStream("/assets/images/Jeep2R.png")));
             }
@@ -288,6 +320,41 @@ public class GameTimer extends AnimationTimer {
         moveJeepney(jeepney2, KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT);
 
         gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        gc.save();
+
+        double screenCenterX = canvas.getWidth() / 2.0;
+        double screenCenterY = canvas.getHeight() / 2.0;
+        
+        long elapsedIntroMs = System.currentTimeMillis() - startTime;
+        double progress = 1.0;
+        if (elapsedIntroMs < INTRO_DURATION_MS) {
+            double t = (double) elapsedIntroMs / INTRO_DURATION_MS;
+            progress = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+        }
+        
+        double currentZoom = 1.0 + (ZOOM_FACTOR - 1.0) * progress;
+        
+        double playerX = jeepney1.getXPos();
+        double playerY = jeepney1.getYPos();
+        
+        double camX = playerX * currentZoom - screenCenterX;
+        double camY = playerY * currentZoom - screenCenterY;
+        
+        double mapWidth = mapGrid[0].length * cellSize;
+        double mapHeight = mapGrid.length * cellSize;
+        
+        double maxCamX = Math.max(0, (mapWidth * currentZoom) - canvas.getWidth());
+        double maxCamY = Math.max(0, (mapHeight * currentZoom) - canvas.getHeight());
+        
+        camX = Math.max(0, Math.min(camX, maxCamX));
+        camY = Math.max(0, Math.min(camY, maxCamY));
+        
+        gc.translate(-camX, -camY);
+        gc.scale(currentZoom, currentZoom);
+        
+        if (backgroundImage != null) {
+            gc.drawImage(backgroundImage, 0, 0, mapWidth, mapHeight);
+        }
 
         handlePassengerPickup(jeepney1, now);
         // FIX #3 — skip pickup/unload for invisible opponent
@@ -306,6 +373,8 @@ public class GameTimer extends AnimationTimer {
 
         jeepney1.render(gc, jeepney1Invincible);
         jeepney2.render(gc, jeepney2Invincible); // render() checks isVisible() internally
+
+        gc.restore();
 
         updateLabels();
         updateClock();
@@ -460,13 +529,19 @@ public class GameTimer extends AnimationTimer {
         if (jeepney1.collidesWith(jeepney2)) {
             if (jeepneyCollisionTime == 0) {
                 jeepneyCollisionTime = now;
+                jeepneyFreezeTime = now;
+
                 if (!jeepney1Invincible) jeepney1.setPassengers(0);
                 if (!jeepney2Invincible) jeepney2.setPassengers(0);
+                
+                if (jeepney1Invincible) jeepney1Invincible = false;
+                if (jeepney2Invincible) jeepney2Invincible = false;
+
+                new Timeline(new KeyFrame(Duration.millis(FREEZE_DELAY),
+                        e -> jeepneyFreezeTime = 0)).play();
                 new Timeline(new KeyFrame(Duration.millis(COLLISION_DELAY),
                         e -> jeepneyCollisionTime = 0)).play();
             }
-            if (jeepney1Invincible) jeepney1Invincible = false;
-            if (jeepney2Invincible) jeepney2Invincible = false;
         }
     }
 
@@ -560,6 +635,13 @@ public class GameTimer extends AnimationTimer {
             if (networkClient != null) {
                 networkClient.sendFell(); // tell server we fell
             }
+            
+            // Respawn after 2 seconds
+            new Timeline(new KeyFrame(Duration.millis(2000), e -> {
+                jeepney1.setXPos(initialJeepney1X);
+                jeepney1.setYPos(initialJeepney1Y);
+                jeepney1.setVisible(true);
+            })).play();
         }
 
         // Opponent hits manhole — solo mode only
