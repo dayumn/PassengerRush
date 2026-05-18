@@ -109,6 +109,12 @@ public class GameTimer extends AnimationTimer {
 
     private boolean gameStarted = false;
     private long lastUpdate = 0;
+    
+    // Network throttling variables
+    private double lastSentX = -1, lastSentY = -1;
+    private int lastSentPass = -1, lastSentPts = -1;
+    private String lastSentDir = "";
+    private long lastNetworkSendTime = 0;
 
     public void setNetworkClient(NetworkClient client) {
         this.networkClient = client;
@@ -369,14 +375,29 @@ public class GameTimer extends AnimationTimer {
         jeepney.setXPos(newX);
         jeepney.setYPos(newY);
 
-        // Send position + direction to server every frame
+        // Send position + direction to server only if changed and at most 20 times a second
         if (networkClient != null && jeepney == jeepney1) {
-            networkClient.sendPosition(
-                    jeepney1.getXPos(),
-                    jeepney1.getYPos(),
-                    jeepney1.getPassengers(),
-                    jeepney1.getPoints(),
-                    jeepney1Direction);
+            long nowTime = System.currentTimeMillis();
+            boolean stateChanged = (newX != lastSentX || newY != lastSentY ||
+                                    jeepney.getPassengers() != lastSentPass ||
+                                    jeepney.getPoints() != lastSentPts ||
+                                    !jeepney1Direction.equals(lastSentDir));
+
+            if (stateChanged && (nowTime - lastNetworkSendTime >= 50)) { // 50ms = 20Hz limit
+                networkClient.sendPosition(
+                        jeepney1.getXPos(),
+                        jeepney1.getYPos(),
+                        jeepney1.getPassengers(),
+                        jeepney1.getPoints(),
+                        jeepney1Direction);
+                
+                lastSentX = newX;
+                lastSentY = newY;
+                lastSentPass = jeepney.getPassengers();
+                lastSentPts = jeepney.getPoints();
+                lastSentDir = jeepney1Direction;
+                lastNetworkSendTime = nowTime;
+            }
         }
     }
 
