@@ -93,7 +93,11 @@ public class LobbyStage {
         Runnable sendMessage = () -> {
             String text = chatInput.getText().trim();
             if (!text.isEmpty()) {
-                chatHistory.appendText("You: " + text + "\n");
+                if (networkClient != null && networkClient.isConnected()) {
+                    networkClient.sendChat(text);
+                } else {
+                    chatHistory.appendText("System: Not connected.\n");
+                }
                 chatInput.clear();
             }
         };
@@ -152,6 +156,13 @@ public class LobbyStage {
                 networkClient = new NetworkClient(serverIP, NetworkClient.DEFAULT_PORT, null, null);
                 if (networkClient.connect()) {
                     networkClient.startListening();
+                    
+                    networkClient.setChatListener((senderId, text) -> {
+                        Platform.runLater(() -> {
+                            String prefix = (networkClient != null && networkClient.getPlayerId() == senderId) ? "You" : "Player " + senderId;
+                            chatHistory.appendText(prefix + ": " + text + "\n");
+                        });
+                    });
                     
                     networkClient.setLobbyUpdateListener((p1c, p1r, p2c, p2r) -> {
                         Platform.runLater(() -> {
