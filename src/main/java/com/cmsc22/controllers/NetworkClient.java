@@ -13,10 +13,10 @@ public class NetworkClient {
 
     public static final int DEFAULT_PORT = 5050;
 
-    private final String host;
-    private final int port;
-    private final Jeepney jeepney1; // this client's jeepney — never overwritten from server
-    private final Jeepney jeepney2; // opponent's jeepney — updated from server STATE
+    private final String  host;
+    private final int     port;
+    private Jeepney jeepney1; // this client's jeepney — never overwritten from server
+    private Jeepney jeepney2; // opponent's jeepney — updated from server STATE
 
     private Socket socket;
     private PrintWriter out;
@@ -24,7 +24,10 @@ public class NetworkClient {
 
     private int playerId = -1;
     private boolean connected = false;
-    private boolean running = false;
+    private boolean running   = false;
+    
+    private double spawnX = 0;
+    private double spawnY = 0;
 
     // FIX #1 — listener that GameTimer registers to know when to start
     public interface GameStartListener {
@@ -40,6 +43,9 @@ public class NetworkClient {
 
     private FellListener fellListener = null;
 
+    public interface LobbyUpdateListener { void onLobbyUpdate(boolean p1c, boolean p1r, boolean p2c, boolean p2r); }
+    private LobbyUpdateListener lobbyUpdateListener = null;
+
     // Chat listener — called on the JavaFX thread when a CHAT message arrives
     public interface ChatListener {
         void onChatMessage(int senderId, String message);
@@ -52,6 +58,19 @@ public class NetworkClient {
         this.port = port;
         this.jeepney1 = jeepney1;
         this.jeepney2 = jeepney2;
+    }
+
+    public void setJeepneys(Jeepney j1, Jeepney j2) {
+        this.jeepney1 = j1;
+        this.jeepney2 = j2;
+        if (this.jeepney1 != null && (spawnX != 0 || spawnY != 0)) {
+            this.jeepney1.setXPos(spawnX);
+            this.jeepney1.setYPos(spawnY);
+        }
+    }
+
+    public void setLobbyUpdateListener(LobbyUpdateListener listener) {
+        this.lobbyUpdateListener = listener;
     }
 
     // FIX #1 — GameTimer calls this to be notified when START arrives
@@ -122,6 +141,16 @@ public class NetworkClient {
         send("FELL:" + playerId);
     }
 
+    public void sendReady() {
+        if (!connected || playerId == -1) return;
+        send("READY:" + playerId);
+    }
+
+    public void sendStartGame() {
+        if (!connected) return;
+        send("START_GAME");
+    }
+
     // FIX #5 — tell server this client is leaving so slot is freed
     public void sendLeave() {
         if (!connected)
@@ -174,11 +203,13 @@ public class NetworkClient {
             case "ASSIGNED" -> {
                 if (parts.length >= 4) {
                     playerId = Integer.parseInt(parts[1]);
-                    double spawnX = Double.parseDouble(parts[2]);
-                    double spawnY = Double.parseDouble(parts[3]);
+                    spawnX = Double.parseDouble(parts[2]);
+                    spawnY = Double.parseDouble(parts[3]);
                     Platform.runLater(() -> {
-                        jeepney1.setXPos(spawnX);
-                        jeepney1.setYPos(spawnY);
+                        if (jeepney1 != null) {
+                            jeepney1.setXPos(spawnX);
+                            jeepney1.setYPos(spawnY);
+                        }
                     });
                     System.out.println("[Client] I am Player " + playerId
                             + " spawning at " + spawnX + "," + spawnY);
@@ -192,6 +223,20 @@ public class NetworkClient {
                     if (gameStartListener != null)
                         gameStartListener.onGameStart();
                 });
+            }
+
+            case "LOBBY_STATE" -> {
+                if (parts.length >= 5) {
+                    boolean p1c = Boolean.parseBoolean(parts[1]);
+                    boolean p1r = Boolean.parseBoolean(parts[2]);
+                    boolean p2c = Boolean.parseBoolean(parts[3]);
+                    boolean p2r = Boolean.parseBoolean(parts[4]);
+                    Platform.runLater(() -> {
+                        if (lobbyUpdateListener != null) {
+                            lobbyUpdateListener.onLobbyUpdate(p1c, p1r, p2c, p2r);
+                        }
+                    });
+                }
             }
 
             // STATE format:
@@ -256,7 +301,7 @@ public class NetworkClient {
             boolean p2visible = Boolean.parseBoolean(parts[12]);
 
             Platform.runLater(() -> {
-                if (playerId == 1) {
+                if (playerId == 1 && jeepney2 != null) {
                     // I am Player 1 — update opponent (jeepney2) with p2 data
                     if (p2x != 0 || p2y != 0) {
                         jeepney2.setXPos(p2x);
@@ -266,7 +311,7 @@ public class NetworkClient {
                         jeepney2.setDirectionImage(p2dir);
                         jeepney2.setVisible(p2visible); // FIX #3
                     }
-                } else if (playerId == 2) {
+                } else if (playerId == 2 && jeepney2 != null) {
                     // I am Player 2 — update opponent (jeepney2) with p1 data
                     if (p1x != 0 || p1y != 0) {
                         jeepney2.setXPos(p1x);

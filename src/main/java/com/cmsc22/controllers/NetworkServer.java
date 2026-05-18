@@ -18,20 +18,22 @@ public class NetworkServer {
     private static final long TICK_MS = 1000L / TICK_RATE_HZ;
 
     // Spawn positions — adjust these to change where each player starts
-    public static final double P1_SPAWN_X = 630, P1_SPAWN_Y = 180;
-    public static final double P2_SPAWN_X = 810, P2_SPAWN_Y = 180;
+    public static final double P1_SPAWN_X = 645, P1_SPAWN_Y = 75;
+    public static final double P2_SPAWN_X = 750, P2_SPAWN_Y = 75;
 
     // Player 1 state
     private volatile double  p1x = P1_SPAWN_X, p1y = P1_SPAWN_Y;
     private volatile int     p1pass = 0, p1pts = 0;
     private volatile String  p1dir  = "DOWN";
     private volatile boolean p1visible = true;
+    private volatile boolean p1ready = false;
 
     // Player 2 state
     private volatile double  p2x = P2_SPAWN_X, p2y = P2_SPAWN_Y;
     private volatile int     p2pass = 0, p2pts = 0;
     private volatile String  p2dir  = "DOWN";
     private volatile boolean p2visible = true;
+    private volatile boolean p2ready = false;
 
     private volatile ClientHandler player1   = null;
     private volatile ClientHandler player2   = null;
@@ -82,10 +84,10 @@ public class NetworkServer {
                 // Reset that player's state for a fresh round
                 if (assignedId == 1) {
                     p1x = P1_SPAWN_X; p1y = P1_SPAWN_Y;
-                    p1pass = 0; p1pts = 0; p1dir = "DOWN"; p1visible = true;
+                    p1pass = 0; p1pts = 0; p1dir = "DOWN"; p1visible = true; p1ready = false;
                 } else {
                     p2x = P2_SPAWN_X; p2y = P2_SPAWN_Y;
-                    p2pass = 0; p2pts = 0; p2dir = "DOWN"; p2visible = true;
+                    p2pass = 0; p2pts = 0; p2dir = "DOWN"; p2visible = true; p2ready = false;
                 }
 
                 ClientHandler handler = new ClientHandler(socket, assignedId);
@@ -99,15 +101,7 @@ public class NetworkServer {
                 System.out.println("[Server] Player " + assignedId + " connected from "
                         + socket.getInetAddress());
 
-                // FIX #1 — only send START when both players are connected
-                if (player1 != null && player2 != null && !gameStarted) {
-                    gameStarted = true;
-                    new Thread(() -> {
-                        try { Thread.sleep(500); } catch (InterruptedException ignored) {}
-                        broadcast("START");
-                        System.out.println("[Server] Sent START to both players.");
-                    }).start();
-                }
+                // (Removed auto-start. Clients must send READY and START_GAME)
 
             } catch (IOException e) {
                 if (running) System.err.println("[Server] Accept error: " + e.getMessage());
@@ -125,12 +119,21 @@ public class NetworkServer {
         });
 
         scheduler.scheduleAtFixedRate(() -> {
-            if (player1 == null || player2 == null) return;
-            String state = "STATE:"
-                    + p1x + ":" + p1y + ":" + p1pass + ":" + p1pts + ":" + p1dir + ":" + p1visible
-                    + ":" + p2x + ":" + p2y + ":" + p2pass + ":" + p2pts + ":" + p2dir + ":" + p2visible;
-            player1.send(state);
-            player2.send(state);
+            boolean p1c = (player1 != null);
+            boolean p2c = (player2 != null);
+            if (!p1c && !p2c) return;
+
+            if (!gameStarted) {
+                // Broadcast lobby state
+                String lobbyState = "LOBBY_STATE:" + p1c + ":" + p1ready + ":" + p2c + ":" + p2ready;
+                broadcast(lobbyState);
+            } else {
+                if (!p1c || !p2c) return;
+                String state = "STATE:"
+                        + p1x + ":" + p1y + ":" + p1pass + ":" + p1pts + ":" + p1dir + ":" + p1visible
+                        + ":" + p2x + ":" + p2y + ":" + p2pass + ":" + p2pts + ":" + p2dir + ":" + p2visible;
+                broadcast(state);
+            }
         }, 0, TICK_MS, TimeUnit.MILLISECONDS);
     }
 
@@ -216,6 +219,20 @@ public class NetworkServer {
                     else               p2visible = false;
                     broadcast("FELL:" + playerId);
                     System.out.println("[Server] Player " + playerId + " fell.");
+                }
+
+                case "READY" -> {
+                    if (playerId == 1) p1ready = true;
+                    else               p2ready = true;
+                    System.out.println("[Server] Player " + playerId + " is ready.");
+                }
+                
+                case "START_GAME" -> {
+                    if (p1ready && p2ready && !gameStarted) {
+                        gameStarted = true;
+                        broadcast("START");
+                        System.out.println("[Server] Sent START to both players.");
+                    }
                 }
 
                 // FIX #5 — client leaving, free the slot

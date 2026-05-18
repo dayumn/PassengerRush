@@ -14,6 +14,8 @@ import javafx.scene.layout.Background;
 import javafx.scene.layout.BackgroundFill;
 import javafx.scene.layout.CornerRadii;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -29,6 +31,7 @@ public class GameStage {
     private Jeepney jeepney1;
     private Jeepney jeepney2;
     private GameTimer gametimer;
+    private Image backgroundImage;
 
     private static final int WINDOW_WIDTH  = 1380;
     private static final int WINDOW_HEIGHT = 800;
@@ -40,8 +43,8 @@ public class GameStage {
     private Label jeepney2LoadLabel;
     private Label gameClockLabel;
 
-    // Shared across New Game clicks — always recreated fresh each time
-    private static NetworkClient sharedNetworkClient = null;
+    // The active network connection passed from LobbyStage
+    private NetworkClient networkClient;
 
     private final int[][] mapGrid = {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -73,7 +76,8 @@ public class GameStage {
             {0, 0, 5, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 7, 7, 7, 0, 0}
     };
 
-    public GameStage() {
+    public GameStage(NetworkClient networkClient) {
+        this.networkClient = networkClient;
         Image jeep1Up    = new Image(getClass().getResourceAsStream("/assets/images/Jeep1U.png"));
         Image jeep1Down  = new Image(getClass().getResourceAsStream("/assets/images/Jeep1D.png"));
         Image jeep1Left  = new Image(getClass().getResourceAsStream("/assets/images/Jeep1L.png"));
@@ -86,8 +90,7 @@ public class GameStage {
         Image jeep2Right = new Image(getClass().getResourceAsStream("/assets/images/Jeep2R.png"));
         this.jeepney2 = new Jeepney(0, 0, "Your Jeepney", jeep2Up, jeep2Down, jeep2Left, jeep2Right);
 
-        Image backgroundImage = new Image(getClass().getResourceAsStream("/assets/images/backgroundScene.png"));
-        ImageView backgroundImageView = new ImageView(backgroundImage);
+        this.backgroundImage = new Image(getClass().getResourceAsStream("/assets/images/backgroundScene.png"));
 
         this.canvas = new Canvas(WINDOW_WIDTH, WINDOW_HEIGHT);
 
@@ -100,10 +103,7 @@ public class GameStage {
         VBox jeepney1Container = createVBox("Player 1", jeepney1PointsLabel, jeepney1LoadLabel);
         VBox jeepney2Container = createVBox("Player 2", jeepney2PointsLabel, jeepney2LoadLabel);
 
-        jeepney1Container.setMaxWidth(300);
-        jeepney2Container.setMaxWidth(300);
-        jeepney1Container.setMaxHeight(50);
-        jeepney2Container.setMaxHeight(50);
+
 
         BackgroundFill backgroundFill = new BackgroundFill(
                 Color.rgb(0, 0, 0, 0.3), new CornerRadii(5), new Insets(-8));
@@ -112,12 +112,18 @@ public class GameStage {
         jeepney2Container.setBackground(background);
         gameClockLabel.setBackground(background);
 
-        HBox topContainer = new HBox(530, jeepney1Container, gameClockLabel, jeepney2Container);
+        Region spacer1 = new Region();
+        HBox.setHgrow(spacer1, Priority.ALWAYS);
+        Region spacer2 = new Region();
+        HBox.setHgrow(spacer2, Priority.ALWAYS);
+
+        HBox topContainer = new HBox(jeepney1Container, spacer1, gameClockLabel, spacer2, jeepney2Container);
         topContainer.setAlignment(Pos.TOP_CENTER);
-        topContainer.setPadding(new Insets(10, 0, 10, 0));
+        topContainer.setPadding(new Insets(10, 20, 10, 20)); // Add padding on sides so text isn't glued to edges
+        topContainer.setMaxHeight(Region.USE_PREF_SIZE);
 
         StackPane stackPane = new StackPane();
-        stackPane.getChildren().addAll(backgroundImageView, canvas, topContainer);
+        stackPane.getChildren().addAll(canvas, topContainer);
         StackPane.setAlignment(topContainer, Pos.TOP_CENTER);
 
         this.scene = new Scene(stackPane, WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -148,65 +154,29 @@ public class GameStage {
                 scene, jeepney1, jeepney2, mapGrid, CELL_SIZE, canvas,
                 jeepney1PointsLabel, jeepney1LoadLabel,
                 jeepney2PointsLabel, jeepney2LoadLabel,
-                gameClockLabel, stage, titleScene);
+                gameClockLabel, stage, titleScene, backgroundImage);
 
-        // Always disconnect old connection cleanly before making a new one
-        if (sharedNetworkClient != null) {
-            sharedNetworkClient.disconnect();
-            sharedNetworkClient = null;
-        }
-
-        // Show stage first so "Searching for server..." is visible immediately
+        // Show stage first
         this.stage.setScene(scene);
         this.stage.show();
         canvas.requestFocus();
         gametimer.registerScene(scene);
-        this.gametimer.start(); // shows waiting screen until startGame() is called
+        this.gametimer.start(); 
 
-        // AUTOMATIC DISCOVERY — runs in background so UI stays responsive
-        Thread discoveryThread = new Thread(() -> {
-            System.out.println("[GameStage] Searching for server on network...");
+        // If we came from the Lobby, the START signal was already received, so we can start immediately
+        if (this.networkClient != null) {
+            this.networkClient.setJeepneys(jeepney1, jeepney2);
+            this.gametimer.setNetworkClient(this.networkClient);
+            this.networkClient.setFellListener(() -> gametimer.hideOpponent());
+            
+            // CHAT — relay messages to the chat overlay
+            this.networkClient.setChatListener((senderId, text) ->
+                    gametimer.addChatMessage(senderId, text));
 
-            // discoverServer() listens for UDP broadcast — waits up to 5 seconds
-            String serverIP = ServerDiscovery.discoverServer();
-
-            // Back on JavaFX thread to update game state
-            Platform.runLater(() -> {
-                if (serverIP != null) {
-                    // Server found — connect
-                    sharedNetworkClient = new NetworkClient(
-                            serverIP, NetworkClient.DEFAULT_PORT, jeepney1, jeepney2);
-
-                    if (sharedNetworkClient.connect()) {
-                        sharedNetworkClient.startListening();
-                        gametimer.setNetworkClient(sharedNetworkClient);
-
-                        // FIX #1 — START signal triggers game timer on both clients
-                        sharedNetworkClient.setGameStartListener(() -> gametimer.startGame());
-
-                        // FIX #3 — FELL signal hides opponent jeepney
-                        sharedNetworkClient.setFellListener(() -> gametimer.hideOpponent());
-
-                        // CHAT — relay messages to the chat overlay
-                        sharedNetworkClient.setChatListener((senderId, text) ->
-                                gametimer.addChatMessage(senderId, text));
-
-                        System.out.println("[GameStage] Multiplayer ON — connected to " + serverIP);
-                    } else {
-                        // Discovered but couldn't connect — fall back to solo
-                        System.out.println("[GameStage] Could not connect to " + serverIP + " — solo mode");
-                        sharedNetworkClient = null;
-                        gametimer.startGame();
-                    }
-                } else {
-                    // No server found on network — solo mode starts immediately
-                    System.out.println("[GameStage] No server found — solo mode");
-                    gametimer.startGame();
-                }
-            });
-        }, "ServerDiscovery-Thread");
-
-        discoveryThread.setDaemon(true);
-        discoveryThread.start();
+            this.gametimer.startGame();
+        } else {
+            // Solo mode
+            this.gametimer.startGame();
+        }
     }
 }

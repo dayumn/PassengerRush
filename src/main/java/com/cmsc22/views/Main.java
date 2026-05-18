@@ -41,8 +41,8 @@ public class Main extends Application {
         ImageView background = createBackgroundImage( "title.png", screenWidth, screenHeight);
 
         Button newGameButton = createButton("New Game", 20, e -> {
-            GameStage gameStage = new GameStage();
-            gameStage.setStage(primaryStage, titleScene); // Pass titleScene
+            LobbyStage lobbyStage = new LobbyStage();
+            lobbyStage.setStage(primaryStage, titleScene); // Pass titleScene
         });
         Button aboutButton = createButton("About", 125, e -> primaryStage.setScene(createAboutScene(titleScene, screenWidth, screenHeight)));
         Button developersButton = createButton("Developers", 250, e -> primaryStage.setScene(createDevelopersScene(titleScene, screenWidth, screenHeight)));
