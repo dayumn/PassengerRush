@@ -27,7 +27,7 @@ public class GameOverScene {
         ImageView gameOverImageView = new ImageView(gameOverImage);
         gameOverImageView.setFitWidth(primaryStage.getWidth()); 
         gameOverImageView.setFitHeight(primaryStage.getHeight());
-        gameOverImageView.setPreserveRatio(true); 
+        gameOverImageView.setPreserveRatio(false); 
 
         layout.getChildren().add(gameOverImageView);
 
@@ -41,7 +41,7 @@ public class GameOverScene {
         layout.getChildren().add(backButton);
         StackPane.setAlignment(backButton, Pos.CENTER); 
 
-        Scene gameOverScene = new Scene(layout);
+        Scene gameOverScene = new Scene(layout, primaryStage.getWidth(), primaryStage.getHeight());
         primaryStage.setScene(gameOverScene);
         primaryStage.show();
     }

@@ -772,8 +772,9 @@ public class GameTimer extends AnimationTimer {
 
     private void updateClock() {
         long elapsedTime = System.currentTimeMillis() - startTime;
-        long seconds = (elapsedTime / 1000) % 60;
-        long minutes = (elapsedTime / (1000 * 60)) % 60;
+        long remainingTime = Math.max(0, 180000 - elapsedTime);
+        long seconds = (remainingTime / 1000) % 60;
+        long minutes = (remainingTime / (1000 * 60)) % 60;
         gameClockLabel.setText(String.format("%02d:%02d", minutes, seconds));
     }
 

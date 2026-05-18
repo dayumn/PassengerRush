@@ -23,8 +23,7 @@ public class LobbyStage {
 
     private Stage stage;
     private Scene scene;
-    private static final int WINDOW_WIDTH = 1380;
-    private static final int WINDOW_HEIGHT = 800;
+
 
     private NetworkClient networkClient;
     private boolean isReady = false;
@@ -37,13 +36,17 @@ public class LobbyStage {
         BorderPane layout = new BorderPane();
         layout.setPadding(new Insets(60));
 
+        javafx.geometry.Rectangle2D bounds = javafx.stage.Screen.getPrimary().getVisualBounds();
+        double screenWidth = bounds.getWidth();
+        double screenHeight = bounds.getHeight();
+
         Image backgroundImage = new Image(getClass().getResourceAsStream("/assets/images/title.png"));
         ImageView backgroundImageView = new ImageView(backgroundImage);
-        backgroundImageView.setFitWidth(WINDOW_WIDTH);
-        backgroundImageView.setFitHeight(WINDOW_HEIGHT);
+        backgroundImageView.setFitWidth(screenWidth);
+        backgroundImageView.setFitHeight(screenHeight);
         backgroundImageView.setPreserveRatio(false);
         
-        Rectangle overlay = new Rectangle(WINDOW_WIDTH, WINDOW_HEIGHT, Color.rgb(15, 15, 40, 0.65));
+        Rectangle overlay = new Rectangle(screenWidth, screenHeight, Color.rgb(15, 15, 40, 0.65));
 
         String panelStyle = "-fx-background-color: rgba(20, 20, 45, 0.95); " +
                             "-fx-border-color: white; " +
@@ -146,7 +149,7 @@ public class LobbyStage {
         StackPane root = new StackPane();
         root.getChildren().addAll(backgroundImageView, overlay, layout);
 
-        this.scene = new Scene(root, WINDOW_WIDTH, WINDOW_HEIGHT);
+        this.scene = new Scene(root, screenWidth, screenHeight);
         this.stage.setScene(scene);
         
         // Connect to server

@@ -33,8 +33,7 @@ public class GameStage {
     private GameTimer gametimer;
     private Image backgroundImage;
 
-    private static final int WINDOW_WIDTH  = 1380;
-    private static final int WINDOW_HEIGHT = 800;
+
     private static final int CELL_SIZE     = 30;
 
     private Label jeepney1PointsLabel;
@@ -92,7 +91,11 @@ public class GameStage {
 
         this.backgroundImage = new Image(getClass().getResourceAsStream("/assets/images/backgroundScene.png"));
 
-        this.canvas = new Canvas(WINDOW_WIDTH, WINDOW_HEIGHT);
+        javafx.geometry.Rectangle2D bounds = javafx.stage.Screen.getPrimary().getVisualBounds();
+        double screenWidth = bounds.getWidth();
+        double screenHeight = bounds.getHeight();
+
+        this.canvas = new Canvas(screenWidth, screenHeight);
 
         jeepney1PointsLabel = createLabel("Total Points: 0");
         jeepney1LoadLabel   = createLabel("Current Load: 0/14");
@@ -126,7 +129,7 @@ public class GameStage {
         stackPane.getChildren().addAll(canvas, topContainer);
         StackPane.setAlignment(topContainer, Pos.TOP_CENTER);
 
-        this.scene = new Scene(stackPane, WINDOW_WIDTH, WINDOW_HEIGHT);
+        this.scene = new Scene(stackPane, screenWidth, screenHeight);
         canvas.setFocusTraversable(true);
     }
 

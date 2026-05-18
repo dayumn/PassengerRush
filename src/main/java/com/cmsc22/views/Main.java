@@ -45,9 +45,8 @@ public class Main extends Application {
             lobbyStage.setStage(primaryStage, titleScene); // Pass titleScene
         });
         Button aboutButton = createButton("About", 125, e -> primaryStage.setScene(createAboutScene(titleScene, screenWidth, screenHeight)));
-        Button developersButton = createButton("Developers", 250, e -> primaryStage.setScene(createDevelopersScene(titleScene, screenWidth, screenHeight)));
 
-        layout.getChildren().addAll(background, newGameButton, aboutButton, developersButton);
+        layout.getChildren().addAll(background, newGameButton, aboutButton);
         return new Scene(layout, screenWidth, screenHeight);
     }
 
@@ -71,13 +70,7 @@ public class Main extends Application {
     }
 
 
-    private Scene createDevelopersScene(Scene previousScene, double screenWidth, double screenHeight) {
-        StackPane layout = new StackPane();
-        ImageView background = createBackgroundImage("developers.png", screenWidth, screenHeight);
-        Button backButton = createButton("Back", 275, e -> primaryStage.setScene(previousScene));
-        layout.getChildren().addAll(background, backButton);
-        return new Scene(layout, screenWidth, screenHeight);
-    }
+
 
     private ImageView createBackgroundImage(String imagePath, double screenWidth, double screenHeight) {
         Image image = new Image(getClass().getResourceAsStream("/assets/images/" + imagePath.trim()));
