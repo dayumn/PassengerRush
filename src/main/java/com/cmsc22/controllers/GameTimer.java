@@ -19,8 +19,12 @@ import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
+import javafx.scene.text.FontPosture;
+import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class GameTimer extends AnimationTimer {
     private Scene scene;
@@ -94,11 +98,32 @@ public class GameTimer extends AnimationTimer {
     private final double ZOOM_FACTOR = 2.0;
     private final long INTRO_DURATION_MS = 2500;
 
+    // ── Chat state ────────────────────────────────────────────────────────────
+    private static final int CHAT_MAX_HISTORY = 6; // lines kept on screen
+    private static final long CHAT_FADE_MS = 8000; // ms before history fades
+    private final Deque<String> chatHistory = new ArrayDeque<>();
+    private final Deque<Long> chatTimestamps = new ArrayDeque<>();
+    private boolean chatInputActive = false; // true while player is typing
+    private StringBuilder chatBuffer = new StringBuilder();
+    // ─────────────────────────────────────────────────────────────────────────
+
     // FIX #1 — game waits for START signal from server before ticking
     private boolean gameStarted = false;
 
     public void setNetworkClient(NetworkClient client) {
         this.networkClient = client;
+    }
+
+    // Called by GameStage when a CHAT message arrives from the network
+    public void addChatMessage(int senderId, String text) {
+        String label = "P" + senderId + ": " + text;
+        chatHistory.addLast(label);
+        chatTimestamps.addLast(System.currentTimeMillis());
+        if (chatHistory.size() > CHAT_MAX_HISTORY) {
+            chatHistory.removeFirst();
+            chatTimestamps.removeFirst();
+        }
+        System.out.println("[Chat] " + label);
     }
 
     // FIX #1 — called by NetworkClient.GameStartListener when server sends START
@@ -176,8 +201,10 @@ public class GameTimer extends AnimationTimer {
         jeepney1LoadTimer.setCycleCount(Timeline.INDEFINITE);
         jeepney2LoadTimer.setCycleCount(Timeline.INDEFINITE);
 
-        jeepney1UnloadTimer = new Timeline(new KeyFrame(Duration.millis(UNLOAD_DELAY), e -> unloadPassengers(jeepney1)));
-        jeepney2UnloadTimer = new Timeline(new KeyFrame(Duration.millis(UNLOAD_DELAY), e -> unloadPassengers(jeepney2)));
+        jeepney1UnloadTimer = new Timeline(
+                new KeyFrame(Duration.millis(UNLOAD_DELAY), e -> unloadPassengers(jeepney1)));
+        jeepney2UnloadTimer = new Timeline(
+                new KeyFrame(Duration.millis(UNLOAD_DELAY), e -> unloadPassengers(jeepney2)));
         jeepney1UnloadTimer.setCycleCount(1);
         jeepney2UnloadTimer.setCycleCount(1);
 
@@ -203,17 +230,74 @@ public class GameTimer extends AnimationTimer {
     }
 
     private void setupKeyHandling() {
-        scene.setOnKeyPressed(e -> activeKeys.add(e.getCode()));
-        scene.setOnKeyReleased(e -> activeKeys.remove(e.getCode()));
+        scene.setOnKeyPressed(e -> {
+            if (chatInputActive) {
+                handleChatKey(e.getCode(), e.getText());
+            } else {
+                if (e.getCode() == KeyCode.ENTER) {
+                    // Open chat bar
+                    chatInputActive = true;
+                    chatBuffer.setLength(0);
+                } else {
+                    activeKeys.add(e.getCode());
+                }
+            }
+        });
+        scene.setOnKeyReleased(e -> {
+            if (!chatInputActive)
+                activeKeys.remove(e.getCode());
+        });
     }
 
-    private int getGridX(double x) { return (int) x / cellSize; }
-    private int getGridY(double y) { return (int) y / cellSize; }
+    /** Handles key presses while the chat input bar is open. */
+    private void handleChatKey(KeyCode code, String text) {
+        switch (code) {
+            case ENTER -> {
+                // Send and close
+                String msg = chatBuffer.toString().trim();
+                if (!msg.isBlank()) {
+                    if (networkClient != null) {
+                        networkClient.sendChat(msg);
+                    } else {
+                        // Solo mode: show locally as Player 1
+                        addChatMessage(1, msg);
+                    }
+                }
+                chatInputActive = false;
+                chatBuffer.setLength(0);
+            }
+            case ESCAPE -> {
+                chatInputActive = false;
+                chatBuffer.setLength(0);
+            }
+            case BACK_SPACE -> {
+                if (chatBuffer.length() > 0)
+                    chatBuffer.deleteCharAt(chatBuffer.length() - 1);
+            }
+            default -> {
+                // Append printable characters
+                if (text != null && !text.isEmpty() && chatBuffer.length() < 120) {
+                    char c = text.charAt(0);
+                    if (c >= 32 && c < 127)
+                        chatBuffer.append(c);
+                }
+            }
+        }
+    }
+
+    private int getGridX(double x) {
+        return (int) x / cellSize;
+    }
+
+    private int getGridY(double y) {
+        return (int) y / cellSize;
+    }
 
     private boolean canMoveTo(double newX, double newY) {
         int gridX = getGridX(newX);
         int gridY = getGridY(newY);
-        if (gridX < 0 || gridY < 0 || gridX >= mapGrid[0].length || gridY >= mapGrid.length) return false;
+        if (gridX < 0 || gridY < 0 || gridX >= mapGrid[0].length || gridY >= mapGrid.length)
+            return false;
         return mapGrid[gridY][gridX] >= 1;
     }
 
@@ -239,8 +323,10 @@ public class GameTimer extends AnimationTimer {
         long elapsedMs = System.currentTimeMillis() - startTime;
         if (gameStarted && elapsedMs < INTRO_DURATION_MS) return;
 
-        // In multiplayer: jeepney2 is the opponent — driven by server, skip local movement
-        if (networkClient != null && jeepney == jeepney2) return;
+        // In multiplayer: jeepney2 is the opponent — driven by server, skip local
+        // movement
+        if (networkClient != null && jeepney == jeepney2)
+            return;
 
         double moveAmount = jeepney.getSpeed();
         double newX = jeepney.getXPos();
@@ -291,14 +377,14 @@ public class GameTimer extends AnimationTimer {
                     jeepney1.getYPos(),
                     jeepney1.getPassengers(),
                     jeepney1.getPoints(),
-                    jeepney1Direction
-            );
+                    jeepney1Direction);
         }
     }
 
     @Override
     public void handle(long now) {
-        if (gameOver) return;
+        if (gameOver)
+            return;
 
         GraphicsContext gc = canvas.getGraphicsContext2D();
 
@@ -358,18 +444,23 @@ public class GameTimer extends AnimationTimer {
 
         handlePassengerPickup(jeepney1, now);
         // FIX #3 — skip pickup/unload for invisible opponent
-        if (jeepney2.isVisible()) handlePassengerPickup(jeepney2, now);
+        if (jeepney2.isVisible())
+            handlePassengerPickup(jeepney2, now);
         handlePassengerUnload(jeepney1, now);
-        if (jeepney2.isVisible()) handlePassengerUnload(jeepney2, now);
+        if (jeepney2.isVisible())
+            handlePassengerUnload(jeepney2, now);
 
         handleJeepneyCollision(now);
         handlePowerUps(now);
         handlePowerUpActivation(now);
         handleManholeCollision();
 
-        for (Passenger passenger : passengers) passenger.render(gc);
-        for (PowerUp powerUp : powerUps)       powerUp.render(gc);
-        if (manhole != null)                   manhole.render(gc);
+        for (Passenger passenger : passengers)
+            passenger.render(gc);
+        for (PowerUp powerUp : powerUps)
+            powerUp.render(gc);
+        if (manhole != null)
+            manhole.render(gc);
 
         jeepney1.render(gc, jeepney1Invincible);
         jeepney2.render(gc, jeepney2Invincible); // render() checks isVisible() internally
@@ -378,13 +469,15 @@ public class GameTimer extends AnimationTimer {
 
         updateLabels();
         updateClock();
+        renderChat(gc);
 
         long elapsedTime = System.currentTimeMillis() - startTime;
         if (elapsedTime >= 180000) {
             gameOver = true;
             Jeepney winner = determineWinner();
             // FIX #5 — disconnect cleanly when game ends so slot is freed
-            if (networkClient != null) networkClient.disconnect();
+            if (networkClient != null)
+                networkClient.disconnect();
             new GameOverScene(winner, primaryStage, titleScene);
         }
     }
@@ -491,8 +584,10 @@ public class GameTimer extends AnimationTimer {
                     jeepney2UnloadTimer.play();
                 }
             } else {
-                if (jeepney == jeepney1) resetUnloadTimer(jeepney1);
-                else resetUnloadTimer(jeepney2);
+                if (jeepney == jeepney1)
+                    resetUnloadTimer(jeepney1);
+                else
+                    resetUnloadTimer(jeepney2);
             }
         }
     }
@@ -521,10 +616,12 @@ public class GameTimer extends AnimationTimer {
     private void handleJeepneyCollision(long now) {
         // FIX #2 — no collision during spawn grace period (first 5 seconds)
         long elapsedMs = System.currentTimeMillis() - startTime;
-        if (elapsedMs < SPAWN_GRACE_PERIOD) return;
+        if (elapsedMs < SPAWN_GRACE_PERIOD)
+            return;
 
         // FIX #3 — skip collision if opponent is invisible (fell into manhole)
-        if (!jeepney2.isVisible()) return;
+        if (!jeepney2.isVisible())
+            return;
 
         if (jeepney1.collidesWith(jeepney2)) {
             if (jeepneyCollisionTime == 0) {
@@ -571,13 +668,15 @@ public class GameTimer extends AnimationTimer {
             if (jeepney1.collidesWith(powerUp) && jeepney1PowerUps.size() < 3) {
                 powerUps.remove(i);
                 jeepney1PowerUps.add(powerUp);
-                if (powerUp.getType().equals("invincibility")) jeepney1Invincible = true;
+                if (powerUp.getType().equals("invincibility"))
+                    jeepney1Invincible = true;
                 spawnPowerUp();
             } else if (jeepney2.isVisible() && jeepney2.collidesWith(powerUp) && jeepney2PowerUps.size() < 3) {
                 // FIX #3 — only pick up powerups if jeepney2 is visible
                 powerUps.remove(i);
                 jeepney2PowerUps.add(powerUp);
-                if (powerUp.getType().equals("invincibility")) jeepney2Invincible = true;
+                if (powerUp.getType().equals("invincibility"))
+                    jeepney2Invincible = true;
                 spawnPowerUp();
             }
         }
@@ -624,9 +723,11 @@ public class GameTimer extends AnimationTimer {
         manhole = new Manhole(x, y, manholeImage);
     }
 
-    // FIX #3 — manhole hides jeepney and notifies server instead of resetting position
+    // FIX #3 — manhole hides jeepney and notifies server instead of resetting
+    // position
     private void handleManholeCollision() {
-        if (manhole == null) return;
+        if (manhole == null)
+            return;
 
         // Local jeepney hits manhole
         if (jeepney1.isVisible() && jeepney1.collidesWith(manhole)) {
@@ -645,7 +746,8 @@ public class GameTimer extends AnimationTimer {
         }
 
         // Opponent hits manhole — solo mode only
-        // In multiplayer the opponent's visibility is controlled by server FELL broadcast
+        // In multiplayer the opponent's visibility is controlled by server FELL
+        // broadcast
         if (networkClient == null && jeepney2.isVisible() && jeepney2.collidesWith(manhole)) {
             jeepney2.setVisible(false);
             jeepney2.setPassengers(0);
@@ -653,9 +755,12 @@ public class GameTimer extends AnimationTimer {
     }
 
     private Jeepney determineWinner() {
-        if (jeepney1.getPoints() > jeepney2.getPoints()) return jeepney1;
-        else if (jeepney2.getPoints() > jeepney1.getPoints()) return jeepney2;
-        else return null;
+        if (jeepney1.getPoints() > jeepney2.getPoints())
+            return jeepney1;
+        else if (jeepney2.getPoints() > jeepney1.getPoints())
+            return jeepney2;
+        else
+            return null;
     }
 
     private void updateLabels() {
@@ -673,7 +778,99 @@ public class GameTimer extends AnimationTimer {
     }
 
     public void registerScene(Scene newScene) {
-        newScene.setOnKeyPressed(e -> activeKeys.add(e.getCode()));
-        newScene.setOnKeyReleased(e -> activeKeys.remove(e.getCode()));
+        newScene.setOnKeyPressed(e -> {
+            if (chatInputActive) {
+                handleChatKey(e.getCode(), e.getText());
+            } else {
+                if (e.getCode() == KeyCode.ENTER) {
+                    chatInputActive = true;
+                    chatBuffer.setLength(0);
+                } else {
+                    activeKeys.add(e.getCode());
+                }
+            }
+        });
+        newScene.setOnKeyReleased(e -> {
+            if (!chatInputActive)
+                activeKeys.remove(e.getCode());
+        });
     }
+
+    // ── Chat rendering ───────────────────────────────────────────────────────
+    private void renderChat(GraphicsContext gc) {
+        double panelX = 10;
+        double panelW = 500;
+        double lineH = 24; // increased line spacing
+        double fontSize = 18; // larger font
+        double barH = 34;
+        double barY = canvas.getHeight() - 75;
+        double historyY = barY - 12; // history sits just above the input bar
+
+        gc.save();
+        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, FontPosture.REGULAR, fontSize));
+
+        // ── Always-visible input bar ─────────────────────────────────────────
+        // Background: darker + more opaque when typing, subtle when idle
+        double barAlpha = chatInputActive ? 0.82 : 0.55;
+        gc.setFill(Color.color(0.05, 0.05, 0.15, barAlpha));
+        gc.fillRoundRect(panelX, barY, panelW, barH, 8, 8);
+
+        // Border glow when active
+        if (chatInputActive) {
+            gc.setStroke(Color.color(1, 0.85, 0.1, 0.9));
+            gc.setLineWidth(2);
+            gc.strokeRoundRect(panelX, barY, panelW, barH, 8, 8);
+        } else {
+            gc.setStroke(Color.color(1, 1, 1, 0.25));
+            gc.setLineWidth(1);
+            gc.strokeRoundRect(panelX, barY, panelW, barH, 8, 8);
+        }
+
+        // Prompt text
+        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, FontPosture.REGULAR, fontSize));
+        if (chatInputActive) {
+            String cursor = (System.currentTimeMillis() / 500 % 2 == 0) ? "|" : " ";
+            String display = "Say: " + chatBuffer.toString() + cursor;
+            gc.setFill(Color.color(1, 0.92, 0.2, 1)); // vivid yellow
+            gc.fillText(display, panelX + 10, barY + barH - 9);
+
+            // Hint
+            gc.setFont(Font.font("Monospaced", FontWeight.NORMAL, FontPosture.REGULAR, 11));
+            gc.setFill(Color.color(0.75, 0.75, 0.75, 0.85));
+            gc.fillText("Enter=send  Esc=cancel", panelX + panelW - 150, barY + barH - 9);
+        } else {
+            // Idle placeholder
+            gc.setFill(Color.color(0.85, 0.85, 0.85, 0.55));
+            gc.fillText("Press [Enter] to chat...", panelX + 10, barY + barH - 9);
+        }
+
+        // ── Chat history ─────────────────────────────────────────────────────
+        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, FontPosture.REGULAR, fontSize));
+        long now = System.currentTimeMillis();
+        String[] lines = chatHistory.toArray(new String[0]);
+        Long[] times = chatTimestamps.toArray(new Long[0]);
+
+        for (int i = lines.length - 1; i >= 0; i--) {
+            long age = now - times[i];
+            if (age > CHAT_FADE_MS && !chatInputActive)
+                continue;
+            // Floor alpha at 0.15 so messages never fully vanish while bar is idle
+            double alpha = chatInputActive ? 0.95 : Math.max(0.15, 1.0 - (double) age / CHAT_FADE_MS);
+            double y = historyY - (lines.length - 1 - i) * lineH;
+
+            // Semi-transparent row background for readability
+            gc.setFill(Color.color(0, 0, 0, alpha * 0.45));
+            gc.fillRect(panelX - 2, y - fontSize + 2, panelW + 4, lineH);
+
+            // Drop-shadow
+            gc.setFill(Color.color(0, 0, 0, alpha * 0.7));
+            gc.fillText(lines[i], panelX + 2, y + 2);
+            // White text
+            gc.setFill(Color.color(1, 1, 1, alpha));
+            gc.fillText(lines[i], panelX, y);
+        }
+
+        gc.restore();
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 }

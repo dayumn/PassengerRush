@@ -168,6 +168,11 @@ public class GameStage {
             this.networkClient.setJeepneys(jeepney1, jeepney2);
             this.gametimer.setNetworkClient(this.networkClient);
             this.networkClient.setFellListener(() -> gametimer.hideOpponent());
+            
+            // CHAT — relay messages to the chat overlay
+            this.networkClient.setChatListener((senderId, text) ->
+                    gametimer.addChatMessage(senderId, text));
+
             this.gametimer.startGame();
         } else {
             // Solo mode
