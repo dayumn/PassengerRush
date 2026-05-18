@@ -107,8 +107,8 @@ public class GameTimer extends AnimationTimer {
     private StringBuilder chatBuffer = new StringBuilder();
     // ─────────────────────────────────────────────────────────────────────────
 
-    // FIX #1 — game waits for START signal from server before ticking
     private boolean gameStarted = false;
+    private long lastUpdate = 0;
 
     public void setNetworkClient(NetworkClient client) {
         this.networkClient = client;
@@ -139,7 +139,6 @@ public class GameTimer extends AnimationTimer {
         System.out.println("[GameTimer] Game started by server signal.");
     }
 
-    // FIX #3 — called by NetworkClient.FellListener when opponent hits manhole
     public void hideOpponent() {
         jeepney2.setVisible(false);
         jeepney2.setPassengers(0);
@@ -317,7 +316,7 @@ public class GameTimer extends AnimationTimer {
         return collides;
     }
 
-    private void moveJeepney(Jeepney jeepney, KeyCode up, KeyCode down, KeyCode left, KeyCode right) {
+    private void moveJeepney(Jeepney jeepney, KeyCode up, KeyCode down, KeyCode left, KeyCode right, double deltaTime) {
         if (jeepneyFreezeTime > 0) return;
 
         long elapsedMs = System.currentTimeMillis() - startTime;
@@ -328,7 +327,7 @@ public class GameTimer extends AnimationTimer {
         if (networkClient != null && jeepney == jeepney2)
             return;
 
-        double moveAmount = jeepney.getSpeed();
+        double moveAmount = jeepney.getSpeed() * deltaTime * 60.0;
         double newX = jeepney.getXPos();
         double newY = jeepney.getYPos();
 
@@ -386,9 +385,15 @@ public class GameTimer extends AnimationTimer {
         if (gameOver)
             return;
 
+        if (lastUpdate == 0) {
+            lastUpdate = now;
+            return;
+        }
+        double deltaTime = (now - lastUpdate) / 1_000_000_000.0;
+        lastUpdate = now;
+
         GraphicsContext gc = canvas.getGraphicsContext2D();
 
-        // FIX #1 — show waiting screen until server sends START
         // In solo mode (networkClient == null), skip straight to game
         if (networkClient != null && !gameStarted) {
             gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
@@ -402,8 +407,8 @@ public class GameTimer extends AnimationTimer {
             return;
         }
 
-        moveJeepney(jeepney1, KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D);
-        moveJeepney(jeepney2, KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT);
+        moveJeepney(jeepney1, KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, deltaTime);
+        moveJeepney(jeepney2, KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT, deltaTime);
 
         gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         gc.save();
@@ -443,7 +448,6 @@ public class GameTimer extends AnimationTimer {
         }
 
         handlePassengerPickup(jeepney1, now);
-        // FIX #3 — skip pickup/unload for invisible opponent
         if (jeepney2.isVisible())
             handlePassengerPickup(jeepney2, now);
         handlePassengerUnload(jeepney1, now);
@@ -475,7 +479,6 @@ public class GameTimer extends AnimationTimer {
         if (elapsedTime >= 180000) {
             gameOver = true;
             Jeepney winner = determineWinner();
-            // FIX #5 — disconnect cleanly when game ends so slot is freed
             if (networkClient != null)
                 networkClient.disconnect();
             new GameOverScene(winner, primaryStage, titleScene);
@@ -672,7 +675,6 @@ public class GameTimer extends AnimationTimer {
                     jeepney1Invincible = true;
                 spawnPowerUp();
             } else if (jeepney2.isVisible() && jeepney2.collidesWith(powerUp) && jeepney2PowerUps.size() < 3) {
-                // FIX #3 — only pick up powerups if jeepney2 is visible
                 powerUps.remove(i);
                 jeepney2PowerUps.add(powerUp);
                 if (powerUp.getType().equals("invincibility"))
@@ -723,7 +725,6 @@ public class GameTimer extends AnimationTimer {
         manhole = new Manhole(x, y, manholeImage);
     }
 
-    // FIX #3 — manhole hides jeepney and notifies server instead of resetting
     // position
     private void handleManholeCollision() {
         if (manhole == null)
