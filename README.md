@@ -35,10 +35,10 @@ Since this game features multiplayer networking, you must run the server before 
 1. **Install Prerequisites**: Ensure you have **Java 26** installed. If using VS Code, install the `Extension Pack for Java`.
 2. Open the project folder in VS Code.
 3. **Start the Server**:
-   * Open `src/main/java/com/cmsc22/controllers/NetworkServer.java`.
+   * Open `/controllers/NetworkServer.java`.
    * Click the `Run` CodeLens button located directly above the `public static void main(String[] args)` method to start the game server.
 4. **Start the Game (Client)**:
-   * Open `src/main/java/com/cmsc22/views/Main.java`.
+   * Open `/views/Main.java`.
    * Click the `Run` CodeLens button above `public static void main(String[] args)`.
    * *(To play multiplayer, run `Main.java` multiple times or on different machines connected to the same network.)*
 
@@ -69,23 +69,23 @@ src/
 └── pom.xml                     # Maven configuration & dependencies
 ```
 
-## 📐 Architecture Breakdown (MVC)
+## Architecture Breakdown (MVC)
 
 To implement Sockets correctly, **do not mix UI logic with Game logic**.
 
-### 1. Models (`com.cmsc22.models`)
+### 1. Models
 **Files:** `Jeepney.java`, `Passenger.java`, `PowerUp.java`, `Manhole.java`, `Sprite.java`
 * These classes represent the "State" of the game.
 * They hold data such as `x`, `y` coordinates, `width`, `height`, and `score`.
 * **Important for Sockets:** The Server will only operate on Models. When sending data over the network, you only send the data inside these models (e.g., send coordinates, not the JavaFX `ImageView` object).
 
-### 2. Views (`com.cmsc22.views`)
+### 2. Views
 **Files:** `Main.java`, `GameStage.java`, `GameOverScene.java`, `LoadingArea.java`, `Graphics.java`
 * This answers "How does the game look?"
 * Contains all JavaFX imports.
 * The view should simply *read* from Models and display them on the screen.
 
-### 3. Controllers (`com.cmsc22.controllers`)
+### 3. Controllers
 **Files:** `GameTimer.java` (and future `NetworkClient`/`NetworkServer`)
 * Contains the game loops and rules.
 * Responds to user input (`KeyPress`) and updates the Models accordingly.
