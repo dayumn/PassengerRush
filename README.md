@@ -1,10 +1,57 @@
-# PassengerRush (Jeepney Game - MPPProject)
+# Passenger Rush
 
-Welcome to the Jeepney Game project! This project has been restructured using Maven and the **MVC (Model-View-Controller)** pattern to make it scalable, maintainable, and ready for multiplayer/networking integration (Sockets).
+**By:**
+* Hugz Bernados
+* Justin Pena
+* Quevin Custodio
 
-## 📁 Project Structure
+**Course:** CMSC 137: Data Communications and Networking
 
-The project follows a standard enterprise Java (Maven) layout.
+Welcome to **Passenger Rush**! This is a fast-paced Jeepney Game project built with Java.
+
+## Project Description
+
+Passenger Rush is an action-packed game where you take control of a Jeepney! Your goal is to navigate the busy streets, pick up passengers to increase your score, and collect power-ups for special boosts. However, you must stay alert and avoid open manholes and other obstacles on the road to prevent crashing.
+
+## Instructions to Play
+
+1. **Start the Game**: Follow the running instructions below to launch the game.
+2. **Move the Jeepney**: Use the **Arrow Keys** (Up, Down, Left, Right) to navigate.
+3. **Pick up Passengers**: Drive over passengers to collect them and earn points.
+4. **Grab Power-Ups**: Collect power-ups for temporary advantages.
+5. **Avoid Obstacles**: Dodge the manholes on the road. Hitting one will result in a Game Over!
+
+## Prerequisites
+
+* **Java Development Kit (JDK) 26** is REQUIRED to compile and run this project. Please ensure your `JAVA_HOME` and environment variables are properly pointing to Java 26.
+* An IDE with Java support (such as VS Code with the Extension Pack for Java) or Maven.
+
+---
+
+## How to Run the Game
+
+Since this game features multiplayer networking, you must run the server before launching the game clients.
+
+1. **Install Prerequisites**: Ensure you have **Java 26** installed. If using VS Code, install the `Extension Pack for Java`.
+2. Open the project folder in VS Code.
+3. **Start the Server**:
+   * Open `src/main/java/com/cmsc22/controllers/NetworkServer.java`.
+   * Click the `Run` CodeLens button located directly above the `public static void main(String[] args)` method to start the game server.
+4. **Start the Game (Client)**:
+   * Open `src/main/java/com/cmsc22/views/Main.java`.
+   * Click the `Run` CodeLens button above `public static void main(String[] args)`.
+   * *(To play multiplayer, run `Main.java` multiple times or on different machines connected to the same network.)*
+
+*(Optional)* If VS Code fails to find packages initially:
+* Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+* Type and select `Java: Clean Workspace`.
+* Select `Restart and clean cache`.
+
+---
+
+## Project Structure
+
+The project follows a standard enterprise Java (Maven) layout utilizing the **MVC (Model-View-Controller)** pattern.
 
 ```text
 src/
@@ -43,59 +90,3 @@ To implement Sockets correctly, **do not mix UI logic with Game logic**.
 * Contains the game loops and rules.
 * Responds to user input (`KeyPress`) and updates the Models accordingly.
 
----
-
-## 🚀 How to Run the Game
-
-1. **Install Prerequisites**: Ensure you have the `Extension Pack for Java` installed in VS Code.
-2. Open the project folder in VS Code.
-3. Open `src/main/java/com/cmsc22/views/Main.java`.
-4. Click the `Run` CodeLens button located directly above the `public static void main(String[] args)` method.
-
-*(Optional)* If VS Code fails to find packages initially:
-* Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
-* Type and select `Java: Clean Workspace`.
-* Select `Restart and clean cache`.
-
----
-
-## 🌐 Future Guide: Implementing Sockets / Multiplayer
-
-When your group gets to the networking phase, keep these rules in mind:
-
-### 1. Separate the Threads
-JavaFX runs on a single main thread (the UI Thread). When you write a `SocketServer` or `SocketClient` to listen for incoming data, it **must run on a background thread**. If you put it on the main thread, the entire game screen will freeze.
-
-### 2. Safely Updating the UI (`Platform.runLater`)
-If your background Network thread receives a message that Player 2 moved, and you try to update the JavaFX `ImageView` directly from the background thread, the app will crash with an `IllegalStateException`.
-
-**Always** wrap UI operations inside `Platform.runLater` when triggered from a network background thread:
-```java
-// Inside your Socket listener thread
-String message = socketIn.readLine(); // "PLAYER2_MOVED_UP"
-
-Platform.runLater(() -> {
-    // This code block safely executes on the JavaFX UI thread
-    jeepney2.moveUp();
-});
-```
-
-### 3. Send Only What is Necessary (Coordinates)
-Do not try to serialize and send JavaFX Objects (like `Image`) over ObjectOutputStreams. Instead, send tiny String commands or custom JSON strings:
-* **Good:** `"P1:100:200"` (Player 1 is at X:100, Y:200)
-* **Good:** `"SPAWN_POWERUP:500:300"`
-
-### 4. Create Network Controllers
-You should create `NetworkServer.java` and `NetworkClient.java` inside the `controllers` package to keep network connections decoupled from the `GameTimer`.
-
----
-
-## 🛠️ Resources Loading
-All images are now loaded dynamically from the classpath so that the game can be exported as a `.jar` later.
-If you need to add more images, place them in `src/main/resources/assets/images/` and load them like this:
-```java
-// Example for creating an Image
-Image newSprite = new Image(getClass().getResourceAsStream("/assets/images/new_sprite.png"));
-```
-
-Good luck scaling your Jeepney Game!
