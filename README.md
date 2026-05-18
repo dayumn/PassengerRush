@@ -69,24 +69,3 @@ src/
 └── pom.xml                     # Maven configuration & dependencies
 ```
 
-## Architecture Breakdown (MVC)
-
-To implement Sockets correctly, **do not mix UI logic with Game logic**.
-
-### 1. Models
-**Files:** `Jeepney.java`, `Passenger.java`, `PowerUp.java`, `Manhole.java`, `Sprite.java`
-* These classes represent the "State" of the game.
-* They hold data such as `x`, `y` coordinates, `width`, `height`, and `score`.
-* **Important for Sockets:** The Server will only operate on Models. When sending data over the network, you only send the data inside these models (e.g., send coordinates, not the JavaFX `ImageView` object).
-
-### 2. Views
-**Files:** `Main.java`, `GameStage.java`, `GameOverScene.java`, `LoadingArea.java`, `Graphics.java`
-* This answers "How does the game look?"
-* Contains all JavaFX imports.
-* The view should simply *read* from Models and display them on the screen.
-
-### 3. Controllers
-**Files:** `GameTimer.java` (and future `NetworkClient`/`NetworkServer`)
-* Contains the game loops and rules.
-* Responds to user input (`KeyPress`) and updates the Models accordingly.
-
